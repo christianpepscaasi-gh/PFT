@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Pocket Ledger</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Personal finance tracker</p>
+        <h1>Pocket Ledger</h1>
+      </div>
+      <div class="topbar-actions">
+        <nav class="view-tabs" aria-label="Main views">
+          <button class="tab-button active" data-view="overview" type="button">Overview</button>
+          <button class="tab-button" data-view="reports" type="button">Reports</button>
+          <button class="tab-button" data-view="planning" type="button">Planning</button>
+          <button class="tab-button" data-view="career" type="button">Career</button>
+        </nav>
+        <button id="quick-entry-button" class="primary-button">Quick Entry</button>
+      </div>
+    </header>
+
+    <main class="layout">
+      <section id="overview-view" class="panel summary-panel view-panel active">
+        <div class="section-heading">
+          <h2>Overview</h2>
+          <label class="month-picker">
+            <span>Salary month</span>
+            <input id="salary-month" type="month" />
+          </label>
+        </div>
+
+        <div class="summary-grid">
+          <article class="summary-card balance">
+            <span>Current balance</span>
+            <strong id="current-balance">₱0.00</strong>
+          </article>
+          <article class="summary-card income">
+            <span>Monthly income</span>
+            <strong id="monthly-income">₱0.00</strong>
+          </article>
+          <article class="summary-card expenses">
+            <span>Monthly expenses</span>
+            <strong id="monthly-expenses">₱0.00</strong>
+          </article>
+          <article class="summary-card net">
+            <span>Net cash flow</span>
+            <strong id="net-cash-flow">₱0.00</strong>
+          </article>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="section-heading">
+          <h2>Accounts</h2>
+          <button id="account-toggle-button" class="secondary-button" type="button">Create Account</button>
+        </div>
+
+        <form id="account-form" class="account-form hidden">
+          <div class="form-grid compact-grid">
+            <label>
+              <span>Account Name</span>
+              <input id="account-name" name="name" type="text" placeholder="Savings" required />
+            </label>
+
+            <label>
+              <span>Type</span>
+              <select id="account-type" name="type">
+                <option value="cash">Cash</option>
+                <option value="bank">Bank</option>
+                <option value="wallet">Wallet</option>
+                <option value="credit">Credit</option>
+              </select>
+            </label>
+
+            <label>
+              <span>Initial Balance</span>
+              <input id="account-initial-balance" name="initialBalance" type="number" min="-9999999" step="0.01" value="0" />
+            </label>
+          </div>
+
+          <div class="form-actions">
+            <button type="submit" class="primary-button">Save Account</button>
+            <button type="button" id="account-cancel-button" class="secondary-button">Cancel</button>
+          </div>
+        </form>
+
+        <div id="account-list" class="account-list"></div>
+      </section>
+
+      <section class="panel">
+        <div class="section-heading">
+          <h2>Transactions</h2>
+        </div>
+        <div id="transaction-list" class="transaction-list"></div>
+      </section>
+
+      <section id="reports-view" class="panel view-panel">
+        <div class="section-heading">
+          <h2>Reports</h2>
+        </div>
+        <div class="summary-grid report-grid">
+          <article class="summary-card income">
+            <span>Income</span>
+            <strong id="report-income">₱0.00</strong>
+          </article>
+          <article class="summary-card expenses">
+            <span>Expenses</span>
+            <strong id="report-expenses">₱0.00</strong>
+          </article>
+          <article class="summary-card net">
+            <span>Net cash flow</span>
+            <strong id="report-net">₱0.00</strong>
+          </article>
+          <article class="summary-card balance">
+            <span>Transaction count</span>
+            <strong id="report-count">0</strong>
+          </article>
+        </div>
+        <div id="report-transaction-list" class="transaction-list"></div>
+      </section>
+
+      <section id="planning-view" class="panel view-panel">
+        <div class="section-heading">
+          <h2>Planning</h2>
+        </div>
+
+        <div class="planning-grid">
+          <div class="sub-panel">
+            <h3>Monthly Budget</h3>
+            <form id="budget-form" class="career-form">
+              <div class="form-grid compact-grid">
+                <label>
+                  <span>Month</span>
+                  <input id="budget-month" type="month" required />
+                </label>
+                <label>
+                  <span>Amount</span>
+                  <input id="budget-amount" type="number" min="0" step="0.01" required />
+                </label>
+              </div>
+              <div class="form-actions">
+                <button type="submit" class="primary-button">Save Budget</button>
+              </div>
+            </form>
+          </div>
+
+          <div class="sub-panel">
+            <h3>Reserve</h3>
+            <form id="reserve-form" class="career-form">
+              <div class="form-grid compact-grid">
+                <label>
+                  <span>Label</span>
+                  <input id="reserve-label" type="text" placeholder="Emergency fund" />
+                </label>
+                <label>
+                  <span>Amount</span>
+                  <input id="reserve-amount" type="number" min="0" step="0.01" required />
+                </label>
+              </div>
+              <div class="form-actions">
+                <button type="submit" class="primary-button">Save Reserve</button>
+              </div>
+            </form>
+          </div>
+
+          <div class="sub-panel">
+            <h3>Payday & Daily Target</h3>
+            <form id="payday-form" class="career-form">
+              <div class="form-grid compact-grid">
+                <label>
+                  <span>Next expected payday</span>
+                  <input id="payday-date" type="date" />
+                </label>
+              </div>
+              <div class="form-actions">
+                <button type="submit" class="primary-button">Forecast</button>
+              </div>
+            </form>
+            <div id="planning-summary" class="summary-note">No plan yet.</div>
+          </div>
+        </div>
+      </section>
+
+      <section id="career-view" class="panel view-panel">
+        <div class="section-heading">
+          <h2>Career</h2>
+        </div>
+
+        <p class="helper-text">Career tracking is optional and never predicts employment outcomes.</p>
+
+        <div class="career-grid">
+          <div class="sub-panel">
+            <h3>Probation</h3>
+            <form id="probation-form" class="career-form">
+              <div class="form-grid compact-grid">
+                <label>
+                  <span>Start date</span>
+                  <input id="probation-start" type="date" required />
+                </label>
+                <label>
+                  <span>End date</span>
+                  <input id="probation-end" type="date" required />
+                </label>
+              </div>
+              <div class="form-actions">
+                <button type="submit" class="primary-button">Save Probation</button>
+              </div>
+            </form>
+            <div id="probation-summary" class="summary-note">Not configured yet.</div>
+          </div>
+
+          <div class="sub-panel">
+            <h3>Checkpoints</h3>
+            <form id="checkpoint-form" class="career-form">
+              <div class="form-grid compact-grid">
+                <label>
+                  <span>Date</span>
+                  <input id="checkpoint-date" type="date" required />
+                </label>
+                <label>
+                  <span>Status</span>
+                  <select id="checkpoint-status">
+                    <option value="upcoming">Upcoming</option>
+                    <option value="completed">Completed</option>
+                    <option value="passed">Passed</option>
+                    <option value="needs improvement">Needs improvement</option>
+                    <option value="unknown">Unknown</option>
+                  </select>
+                </label>
+              </div>
+              <label>
+                <span>Title</span>
+                <input id="checkpoint-title" type="text" required />
+              </label>
+              <label>
+                <span>Notes</span>
+                <textarea id="checkpoint-notes" rows="3"></textarea>
+              </label>
+              <div class="form-actions">
+                <button type="submit" class="primary-button">Add Checkpoint</button>
+              </div>
+            </form>
+            <div id="checkpoint-list" class="mini-list"></div>
+          </div>
+
+          <div class="sub-panel">
+            <h3>Skills</h3>
+            <form id="skill-form" class="career-form">
+              <div class="form-grid compact-grid">
+                <label>
+                  <span>Skill</span>
+                  <input id="skill-name" type="text" required />
+                </label>
+                <label>
+                  <span>Status</span>
+                  <select id="skill-status">
+                    <option value="not started">Not started</option>
+                    <option value="learning">Learning</option>
+                    <option value="practicing">Practicing</option>
+                    <option value="comfortable">Comfortable</option>
+                    <option value="mastered">Mastered</option>
+                  </select>
+                </label>
+              </div>
+              <div class="form-actions">
+                <button type="submit" class="primary-button">Save Skill</button>
+              </div>
+            </form>
+            <div id="skill-list" class="mini-list"></div>
+          </div>
+
+          <div class="sub-panel">
+            <h3>Tasks</h3>
+            <form id="task-form" class="career-form">
+              <label>
+                <span>Title</span>
+                <input id="task-title" type="text" required />
+              </label>
+              <div class="form-grid compact-grid">
+                <label>
+                  <span>Status</span>
+                  <select id="task-status">
+                    <option value="todo">To do</option>
+                    <option value="in-progress">In progress</option>
+                    <option value="completed">Completed</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Due date</span>
+                  <input id="task-date" type="date" />
+                </label>
+              </div>
+              <label>
+                <span>Notes</span>
+                <textarea id="task-notes" rows="3"></textarea>
+              </label>
+              <div class="form-actions">
+                <button type="submit" class="primary-button">Add Task</button>
+              </div>
+            </form>
+            <div id="task-list" class="mini-list"></div>
+          </div>
+
+          <div class="sub-panel full-span">
+            <h3>Learning Journal</h3>
+            <form id="journal-form" class="career-form">
+              <div class="form-grid compact-grid">
+                <label>
+                  <span>Date</span>
+                  <input id="journal-date" type="date" required />
+                </label>
+              </div>
+              <label>
+                <span>Entry</span>
+                <textarea id="journal-entry" rows="4" required></textarea>
+              </label>
+              <div class="form-actions">
+                <button type="submit" class="primary-button">Save Journal Entry</button>
+              </div>
+            </form>
+            <div id="journal-list" class="mini-list"></div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <dialog id="quick-entry-modal">
+      <form id="quick-entry-form" method="dialog">
+        <div class="modal-header">
+          <h3>Quick Entry</h3>
+          <button type="button" class="close-button" data-close-modal>Close</button>
+        </div>
+
+        <div class="form-grid">
+          <label>
+            <span>Account</span>
+            <select id="entry-account" required></select>
+          </label>
+
+          <label>
+            <span>Type</span>
+            <select id="entry-type">
+              <option value="expense">Expense</option>
+              <option value="income">Income</option>
+            </select>
+          </label>
+
+          <label>
+            <span>Amount</span>
+            <input id="entry-amount" type="number" min="0.01" step="0.01" required />
+          </label>
+
+          <label>
+            <span>Category</span>
+            <input id="entry-category" type="text" placeholder="Food" />
+          </label>
+
+          <label class="full-width">
+            <span>Description</span>
+            <input id="entry-description" type="text" required />
+          </label>
+
+          <label class="full-width">
+            <span>Notes</span>
+            <textarea id="entry-notes" rows="3"></textarea>
+          </label>
+
+          <label>
+            <span>Date</span>
+            <input id="entry-date" type="date" required />
+          </label>
+
+          <label>
+            <span>Time</span>
+            <input id="entry-time" type="time" required />
+          </label>
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" class="secondary-button" data-close-modal>Cancel</button>
+          <button type="submit" class="primary-button">Save</button>
+        </div>
+      </form>
+    </dialog>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
