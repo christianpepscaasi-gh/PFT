@@ -26,6 +26,11 @@ function renderAccounts(accounts) {
   const container = document.getElementById('account-list');
   container.innerHTML = '';
 
+  if (!accounts.length) {
+    container.innerHTML = '<div class="empty-state">No accounts yet. Create one to start tracking your money.</div>';
+    return;
+  }
+
   accounts.forEach((account) => {
     const item = document.createElement('div');
     item.className = 'account-item';
@@ -52,7 +57,7 @@ function renderTransactions(transactions, containerId = 'transaction-list') {
   container.innerHTML = '';
 
   if (!transactions.length) {
-    container.innerHTML = '<div class="transaction-item">No transactions recorded yet.</div>';
+    container.innerHTML = '<div class="empty-state">No transactions yet. Add your first income or expense with Quick Entry.</div>';
     return;
   }
 
@@ -91,7 +96,9 @@ async function loadOverview() {
   state.accounts = data.accounts || [];
 
   const accountSelect = document.getElementById('entry-account');
-  accountSelect.innerHTML = (data.accounts || []).map((account) => `<option value="${account._id}">${account.name}</option>`).join('');
+  accountSelect.innerHTML = state.accounts.length
+    ? state.accounts.map((account) => `<option value="${account._id}">${account.name}</option>`).join('')
+    : '<option value="">Create an account first</option>';
 }
 
 async function loadTransactions() {
@@ -432,8 +439,19 @@ document.getElementById('account-form').addEventListener('submit', handleAccount
 document.querySelectorAll('.tab-button').forEach((button) => {
   button.addEventListener('click', () => {
     const view = button.dataset.view;
-    document.querySelectorAll('.tab-button').forEach((tab) => tab.classList.toggle('active', tab === button));
+    document.querySelectorAll('.tab-button').forEach((tab) => {
+      const active = tab === button;
+      tab.classList.toggle('active', active);
+      if (active) {
+        tab.setAttribute('aria-current', 'page');
+      } else {
+        tab.removeAttribute('aria-current');
+      }
+    });
     document.querySelectorAll('.view-panel').forEach((panel) => panel.classList.toggle('active', panel.id === `${view}-view`));
+    document.querySelectorAll('[data-view-panel]').forEach((panel) => {
+      panel.hidden = panel.dataset.viewPanel !== view;
+    });
   });
 });
 

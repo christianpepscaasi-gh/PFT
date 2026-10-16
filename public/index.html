@@ -8,27 +8,34 @@
   </head>
   <body>
     <header class="topbar">
-      <div>
-        <p class="eyebrow">Personal finance tracker</p>
-        <h1>Pocket Ledger</h1>
-      </div>
+      <a class="brand" href="/" aria-label="Pocket Ledger home">
+        <span class="brand-mark" aria-hidden="true">P</span>
+        <span class="brand-copy">
+          <span class="eyebrow">Personal finance tracker</span>
+          <span class="brand-name">Pocket Ledger</span>
+        </span>
+      </a>
       <div class="topbar-actions">
         <nav class="view-tabs" aria-label="Main views">
-          <button class="tab-button active" data-view="overview" type="button">Overview</button>
-          <button class="tab-button" data-view="reports" type="button">Reports</button>
-          <button class="tab-button" data-view="planning" type="button">Planning</button>
-          <button class="tab-button" data-view="career" type="button">Career</button>
+          <button class="tab-button active" data-view="overview" aria-controls="overview-view" aria-current="page" type="button">Overview</button>
+          <button class="tab-button" data-view="reports" aria-controls="reports-view" type="button">Reports</button>
+          <button class="tab-button" data-view="planning" aria-controls="planning-view" type="button">Planning</button>
+          <button class="tab-button" data-view="career" aria-controls="career-view" type="button">Career</button>
         </nav>
-        <button id="quick-entry-button" class="primary-button">Quick Entry</button>
+        <button id="quick-entry-button" class="primary-button" type="button">Quick Entry</button>
       </div>
     </header>
 
     <main class="layout">
-      <section id="overview-view" class="panel summary-panel view-panel active">
-        <div class="section-heading">
-          <h2>Overview</h2>
+      <section id="overview-view" class="panel summary-panel view-panel active" data-view-panel="overview">
+        <div class="section-heading overview-heading">
+          <div>
+            <p class="eyebrow">Your money, made clearer</p>
+            <h1>Overview</h1>
+            <p class="helper-text">See what came in, what went out, and where you stand.</p>
+          </div>
           <label class="month-picker">
-            <span>Salary month</span>
+            <span>Month</span>
             <input id="salary-month" type="month" />
           </label>
         </div>
@@ -53,16 +60,19 @@
         </div>
       </section>
 
-      <section class="panel">
+      <section class="panel overview-content" data-view-panel="overview">
         <div class="section-heading">
-          <h2>Accounts</h2>
-          <button id="account-toggle-button" class="secondary-button" type="button">Create Account</button>
+          <div>
+            <h2>Accounts</h2>
+            <p class="helper-text">Keep your cash, bank, and wallet balances together.</p>
+          </div>
+          <button id="account-toggle-button" class="secondary-button" type="button">Create account</button>
         </div>
 
         <form id="account-form" class="account-form hidden">
           <div class="form-grid compact-grid">
             <label>
-              <span>Account Name</span>
+              <span>Account name</span>
               <input id="account-name" name="name" type="text" placeholder="Savings" required />
             </label>
 
@@ -77,30 +87,36 @@
             </label>
 
             <label>
-              <span>Initial Balance</span>
+              <span>Starting balance</span>
               <input id="account-initial-balance" name="initialBalance" type="number" min="-9999999" step="0.01" value="0" />
             </label>
           </div>
 
           <div class="form-actions">
-            <button type="submit" class="primary-button">Save Account</button>
+            <button type="submit" class="primary-button">Save account</button>
             <button type="button" id="account-cancel-button" class="secondary-button">Cancel</button>
           </div>
         </form>
 
-        <div id="account-list" class="account-list"></div>
+        <div id="account-list" class="account-list" aria-live="polite"></div>
       </section>
 
-      <section class="panel">
+      <section class="panel overview-content" data-view-panel="overview">
         <div class="section-heading">
-          <h2>Transactions</h2>
+          <div>
+            <h2>Recent transactions</h2>
+            <p class="helper-text">A quick look at your latest activity.</p>
+          </div>
         </div>
-        <div id="transaction-list" class="transaction-list"></div>
+        <div id="transaction-list" class="transaction-list" aria-live="polite"></div>
       </section>
 
-      <section id="reports-view" class="panel view-panel">
+      <section id="reports-view" class="panel view-panel" data-view-panel="reports">
         <div class="section-heading">
-          <h2>Reports</h2>
+          <div>
+            <p class="eyebrow">Your activity at a glance</p>
+            <h1>Reports</h1>
+          </div>
         </div>
         <div class="summary-grid report-grid">
           <article class="summary-card income">
@@ -120,17 +136,21 @@
             <strong id="report-count">0</strong>
           </article>
         </div>
+        <h2 class="list-heading">Transactions this month</h2>
         <div id="report-transaction-list" class="transaction-list"></div>
       </section>
 
-      <section id="planning-view" class="panel view-panel">
+      <section id="planning-view" class="panel view-panel" data-view-panel="planning">
         <div class="section-heading">
-          <h2>Planning</h2>
+          <div>
+            <p class="eyebrow">Make a plan that works for you</p>
+            <h1>Planning</h1>
+          </div>
         </div>
 
         <div class="planning-grid">
           <div class="sub-panel">
-            <h3>Monthly Budget</h3>
+            <h3>Monthly budget</h3>
             <form id="budget-form" class="career-form">
               <div class="form-grid compact-grid">
                 <label>
@@ -143,7 +163,7 @@
                 </label>
               </div>
               <div class="form-actions">
-                <button type="submit" class="primary-button">Save Budget</button>
+                <button type="submit" class="primary-button">Save budget</button>
               </div>
             </form>
           </div>
@@ -162,13 +182,13 @@
                 </label>
               </div>
               <div class="form-actions">
-                <button type="submit" class="primary-button">Save Reserve</button>
+                <button type="submit" class="primary-button">Save reserve</button>
               </div>
             </form>
           </div>
 
           <div class="sub-panel">
-            <h3>Payday & Daily Target</h3>
+            <h3>Payday &amp; daily target</h3>
             <form id="payday-form" class="career-form">
               <div class="form-grid compact-grid">
                 <label>
@@ -185,9 +205,12 @@
         </div>
       </section>
 
-      <section id="career-view" class="panel view-panel">
+      <section id="career-view" class="panel view-panel" data-view-panel="career">
         <div class="section-heading">
-          <h2>Career</h2>
+          <div>
+            <p class="eyebrow">Optional personal growth tools</p>
+            <h1>Career</h1>
+          </div>
         </div>
 
         <p class="helper-text">Career tracking is optional and never predicts employment outcomes.</p>
@@ -207,7 +230,7 @@
                 </label>
               </div>
               <div class="form-actions">
-                <button type="submit" class="primary-button">Save Probation</button>
+                <button type="submit" class="primary-button">Save probation</button>
               </div>
             </form>
             <div id="probation-summary" class="summary-note">Not configured yet.</div>
@@ -241,7 +264,7 @@
                 <textarea id="checkpoint-notes" rows="3"></textarea>
               </label>
               <div class="form-actions">
-                <button type="submit" class="primary-button">Add Checkpoint</button>
+                <button type="submit" class="primary-button">Add checkpoint</button>
               </div>
             </form>
             <div id="checkpoint-list" class="mini-list"></div>
@@ -267,7 +290,7 @@
                 </label>
               </div>
               <div class="form-actions">
-                <button type="submit" class="primary-button">Save Skill</button>
+                <button type="submit" class="primary-button">Save skill</button>
               </div>
             </form>
             <div id="skill-list" class="mini-list"></div>
@@ -299,14 +322,14 @@
                 <textarea id="task-notes" rows="3"></textarea>
               </label>
               <div class="form-actions">
-                <button type="submit" class="primary-button">Add Task</button>
+                <button type="submit" class="primary-button">Add task</button>
               </div>
             </form>
             <div id="task-list" class="mini-list"></div>
           </div>
 
           <div class="sub-panel full-span">
-            <h3>Learning Journal</h3>
+            <h3>Learning journal</h3>
             <form id="journal-form" class="career-form">
               <div class="form-grid compact-grid">
                 <label>
@@ -319,7 +342,7 @@
                 <textarea id="journal-entry" rows="4" required></textarea>
               </label>
               <div class="form-actions">
-                <button type="submit" class="primary-button">Save Journal Entry</button>
+                <button type="submit" class="primary-button">Save journal entry</button>
               </div>
             </form>
             <div id="journal-list" class="mini-list"></div>
@@ -331,8 +354,11 @@
     <dialog id="quick-entry-modal">
       <form id="quick-entry-form" method="dialog">
         <div class="modal-header">
-          <h3>Quick Entry</h3>
-          <button type="button" class="close-button" data-close-modal>Close</button>
+          <div>
+            <p class="eyebrow">Keep your records up to date</p>
+            <h2>Quick entry</h2>
+          </div>
+          <button type="button" class="close-button" data-close-modal aria-label="Close quick entry">Close</button>
         </div>
 
         <div class="form-grid">
@@ -382,7 +408,7 @@
 
         <div class="modal-actions">
           <button type="button" class="secondary-button" data-close-modal>Cancel</button>
-          <button type="submit" class="primary-button">Save</button>
+          <button type="submit" class="primary-button">Save entry</button>
         </div>
       </form>
     </dialog>
