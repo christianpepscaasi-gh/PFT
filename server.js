@@ -2,7 +2,7 @@ const express = require('express');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 const dotenv = require('dotenv');
-const mongoose = require('mongoose');
+const { createPersistenceStore, mongoose } = require('./src/persistence');
 const { getAccountBalance, getPhilippineDateKey } = require('./src/utils/finance');
 
 dotenv.config();
@@ -82,8 +82,8 @@ function filterTransactionsByRange(transactions, start, end) {
   });
 }
 
-function buildAccountSummaryAtDate(account, endDateKey) {
-  const relevantTransactions = inMemoryStore.transactions.filter((transaction) => {
+function buildAccountSummaryAtDate(account, endDateKey, transactionList = inMemoryStore.transactions) {
+  const relevantTransactions = transactionList.filter((transaction) => {
     if (transaction.accountId !== account._id) {
       return false;
     }
@@ -158,8 +158,7 @@ function getDailyTargetForDate(date, month) {
   };
 }
 
-function getPaydayRecommendation({ nextExpectedPayday, reserves = 0 }) {
-  const accountsTotal = getAvailableAccountBalance();
+function getPaydayRecommendation({ nextExpectedPayday, reserves = 0, accountsTotal = getAvailableAccountBalance() }) {
   const availableBalance = accountsTotal - Number(reserves || 0);
 
   if (!nextExpectedPayday || !Number.isFinite(availableBalance)) {
@@ -199,16 +198,26 @@ function getPaydayRecommendation({ nextExpectedPayday, reserves = 0 }) {
   };
 }
 
-function ensureAccountExists(accountId) {
+async function ensureAccountExists(accountId) {
   const account = inMemoryStore.accounts.find((item) => item._id === accountId);
-  if (!account) {
-    throw new Error('Account not found');
+  if (account) {
+    return account;
   }
-  return account;
+
+  if (mongoose.connection.readyState === 1) {
+    const mongoAccount = await mongoose.connection.db.collection('accounts').findOne({ _id: accountId });
+    if (mongoAccount) {
+      return mongoAccount;
+    }
+  }
+
+  throw new Error('Account not found');
 }
 
 function createApp() {
+  const persistenceStore = createPersistenceStore({ mongoUri: process.env.MONGODB_URI });
   const app = express();
+  app.locals.persistenceStore = persistenceStore;
 
   app.use(express.json());
   app.use(express.static(path.join(__dirname, 'public')));
@@ -218,46 +227,41 @@ function createApp() {
   });
 
   app.get('/health', (req, res) => {
-    res.json({ ok: true, message: 'Pocket Ledger server is running.' });
+    res.json({ ok: true, message: 'Pocket Ledger server is running.', database: persistenceStore.mode, ready: persistenceStore.isReady() });
   });
 
-  app.get('/api/accounts', (req, res) => {
-    const accounts = inMemoryStore.accounts.map(buildAccountSummary);
+  app.get('/ready', async (req, res) => {
+    const ready = persistenceStore.isReady();
+    if (!ready) {
+      return res.status(503).json({ ok: false, ready: false, message: 'Database not ready.' });
+    }
+
+    return res.json({ ok: true, ready: true, database: persistenceStore.mode });
+  });
+
+  app.get('/api/accounts', async (req, res) => {
+    const accounts = await persistenceStore.listAccounts();
     res.json(accounts);
   });
 
-  app.post('/api/accounts', (req, res) => {
+  app.post('/api/accounts', async (req, res) => {
     const { name, type, initialBalance = 0 } = req.body;
 
     if (!name || !type) {
       return res.status(400).json({ error: 'Account name and type are required.' });
     }
 
-    const account = {
-      _id: randomUUID(),
-      name,
-      type,
-      initialBalance: Number(initialBalance) || 0,
-      archived: false,
-      createdAt: new Date().toISOString()
-    };
-
-    inMemoryStore.accounts.push(account);
-    return res.status(201).json(buildAccountSummary(account));
+    const account = await persistenceStore.createAccount({ name, type, initialBalance });
+    return res.status(201).json(account);
   });
 
-  app.get('/api/transactions', (req, res) => {
+  app.get('/api/transactions', async (req, res) => {
     const { accountId } = req.query;
-    let transactions = [...inMemoryStore.transactions];
-
-    if (accountId) {
-      transactions = transactions.filter((transaction) => transaction.accountId === accountId);
-    }
-
+    const transactions = await persistenceStore.listTransactions(accountId || null);
     res.json(transactions);
   });
 
-  app.post('/api/transactions', (req, res) => {
+  app.post('/api/transactions', async (req, res) => {
     const { accountId, type, amount, description, category, occurredAt, notes } = req.body;
 
     if (!accountId || !type || !description || !amount) {
@@ -265,7 +269,7 @@ function createApp() {
     }
 
     try {
-      ensureAccountExists(accountId);
+      await ensureAccountExists(accountId);
     } catch (error) {
       return res.status(404).json({ error: error.message });
     }
@@ -279,77 +283,77 @@ function createApp() {
       return res.status(400).json({ error: 'Amount must be a positive number.' });
     }
 
-    const transaction = {
-      _id: randomUUID(),
+    const transaction = await persistenceStore.createTransaction({
       accountId,
       type,
       amount: parsedAmount,
       description,
       category: category || null,
       occurredAt: occurredAt || new Date().toISOString(),
-      notes: notes || '',
-      createdAt: new Date().toISOString()
-    };
+      notes: notes || ''
+    });
 
-    inMemoryStore.transactions.push(transaction);
     return res.status(201).json(transaction);
   });
 
-  app.patch('/api/transactions/:id', (req, res) => {
-    const transaction = inMemoryStore.transactions.find((item) => item._id === req.params.id);
+  app.patch('/api/transactions/:id', async (req, res) => {
+    const existing = await persistenceStore.listTransactions();
+    const transaction = existing.find((item) => item._id === req.params.id) || inMemoryStore.transactions.find((item) => item._id === req.params.id);
 
     if (!transaction) {
       return res.status(404).json({ error: 'Transaction not found.' });
     }
 
     const { amount, description, category, notes, type, accountId, occurredAt } = req.body;
+    const nextPatch = {};
 
     if (amount !== undefined) {
       const parsedAmount = Number(amount);
       if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
         return res.status(400).json({ error: 'Amount must be a positive number.' });
       }
-      transaction.amount = parsedAmount;
+      nextPatch.amount = parsedAmount;
     }
 
-    if (description !== undefined) transaction.description = description;
-    if (category !== undefined) transaction.category = category;
-    if (notes !== undefined) transaction.notes = notes;
-    if (type !== undefined) transaction.type = type;
+    if (description !== undefined) nextPatch.description = description;
+    if (category !== undefined) nextPatch.category = category;
+    if (notes !== undefined) nextPatch.notes = notes;
+    if (type !== undefined) nextPatch.type = type;
     if (accountId !== undefined) {
       try {
-        ensureAccountExists(accountId);
-        transaction.accountId = accountId;
+        await ensureAccountExists(accountId);
+        nextPatch.accountId = accountId;
       } catch (error) {
         return res.status(404).json({ error: error.message });
       }
     }
-    if (occurredAt !== undefined) transaction.occurredAt = occurredAt;
+    if (occurredAt !== undefined) nextPatch.occurredAt = occurredAt;
 
-    return res.json(transaction);
-  });
-
-  app.delete('/api/transactions/:id', (req, res) => {
-    const index = inMemoryStore.transactions.findIndex((item) => item._id === req.params.id);
-
-    if (index === -1) {
+    const updated = await persistenceStore.updateTransaction(req.params.id, nextPatch);
+    if (!updated) {
       return res.status(404).json({ error: 'Transaction not found.' });
     }
 
-    const [removed] = inMemoryStore.transactions.splice(index, 1);
-    return res.json({ deleted: true, transaction: removed });
+    return res.json(updated);
   });
 
-  app.get('/api/reports/overview', (req, res) => {
-    const accounts = inMemoryStore.accounts
-      .filter((account) => !account.archived)
-      .map(buildAccountSummary);
-    const income = inMemoryStore.transactions
+  app.delete('/api/transactions/:id', async (req, res) => {
+    const deleted = await persistenceStore.deleteTransaction(req.params.id);
+    if (!deleted) {
+      return res.status(404).json({ error: 'Transaction not found.' });
+    }
+    return res.json(deleted);
+  });
+
+  app.get('/api/reports/overview', async (req, res) => {
+    const accounts = (await persistenceStore.listAccounts()).filter((account) => !account.archived);
+    const transactions = await persistenceStore.listTransactions();
+    const income = transactions
       .filter((transaction) => transaction.type === 'income')
-      .reduce((total, transaction) => total + transaction.amount, 0);
-    const expenses = inMemoryStore.transactions
+      .reduce((total, transaction) => total + Number(transaction.amount || 0), 0);
+    const expenses = transactions
       .filter((transaction) => transaction.type === 'expense')
-      .reduce((total, transaction) => total + transaction.amount, 0);
+      .reduce((total, transaction) => total + Number(transaction.amount || 0), 0);
 
     res.json({
       income,
@@ -359,12 +363,10 @@ function createApp() {
     });
   });
 
-  app.get('/api/overview', (req, res) => {
+  app.get('/api/overview', async (req, res) => {
     const month = String(req.query.month || getPhilippineDateKey(new Date()).slice(0, 7)).trim();
-    const activeAccounts = inMemoryStore.accounts
-      .filter((account) => !account.archived)
-      .map(buildAccountSummary);
-    const monthlyTransactions = inMemoryStore.transactions.filter((transaction) => {
+    const activeAccounts = (await persistenceStore.listAccounts()).filter((account) => !account.archived);
+    const monthlyTransactions = (await persistenceStore.listTransactions()).filter((transaction) => {
       const dateKey = getDateKeyForTransaction(transaction.occurredAt);
       return dateKey.startsWith(month);
     });
@@ -388,12 +390,13 @@ function createApp() {
     });
   });
 
-  app.get('/api/reports/period', (req, res) => {
+  app.get('/api/reports/period', async (req, res) => {
     const period = req.query.period || 'custom';
     const start = String(req.query.start || '').trim() || null;
     const end = String(req.query.end || '').trim() || null;
     const range = normalizePeriodRange(period, start, end);
-    const relevantTransactions = filterTransactionsByRange(inMemoryStore.transactions, range.start, range.end);
+    const transactions = await persistenceStore.listTransactions();
+    const relevantTransactions = filterTransactionsByRange(transactions, range.start, range.end);
     const income = relevantTransactions
       .filter((transaction) => transaction.type === 'income')
       .reduce((total, transaction) => total + Number(transaction.amount || 0), 0);
@@ -401,7 +404,8 @@ function createApp() {
       .filter((transaction) => transaction.type === 'expense')
       .reduce((total, transaction) => total + Number(transaction.amount || 0), 0);
 
-    const accountBalances = inMemoryStore.accounts.map((account) => buildAccountSummaryAtDate(account, range.end));
+    const accountTransactions = await persistenceStore.listTransactions();
+    const accountBalances = (await persistenceStore.listAccounts()).map((account) => buildAccountSummaryAtDate(account, range.end, accountTransactions));
 
     res.json({
       period,
@@ -416,10 +420,10 @@ function createApp() {
     });
   });
 
-  app.get('/api/reports/salary', (req, res) => {
+  app.get('/api/reports/salary', async (req, res) => {
     const month = String(req.query.month || '').trim();
     const monthPrefix = month || getPhilippineDateKey(new Date()).slice(0, 7);
-    const monthTransactions = inMemoryStore.transactions.filter((transaction) => {
+    const monthTransactions = (await persistenceStore.listTransactions()).filter((transaction) => {
       if (transaction.type !== 'income') {
         return false;
       }
@@ -667,10 +671,15 @@ function createApp() {
     return res.json(override || null);
   });
 
-  app.get('/api/planning/payday', (req, res) => {
+  app.get('/api/planning/payday', async (req, res) => {
     const nextExpectedPayday = req.query.nextExpectedPayday || null;
+    const accounts = await persistenceStore.listAccounts();
+    const accountsTotal = accounts.reduce((total, account) => total + Number(account.balance || 0), 0);
     const reserves = inMemoryStore.reserves.reduce((total, reserve) => total + Number(reserve.amount || 0), 0);
-    const recommendation = getPaydayRecommendation({ nextExpectedPayday, reserves });
+    const recommendation = getPaydayRecommendation({ nextExpectedPayday, reserves, accountsTotal });
+    if (recommendation && recommendation.inputs) {
+      recommendation.inputs.availableBalance = Number(accountsTotal);
+    }
     res.json(recommendation);
   });
 
@@ -705,12 +714,11 @@ function createApp() {
 
 async function startServer() {
   const app = createApp();
-
   const mongoUri = process.env.MONGODB_URI;
 
   if (mongoUri) {
     try {
-      await mongoose.connect(mongoUri);
+      await app.locals.persistenceStore.connect();
       console.log('MongoDB connected');
     } catch (error) {
       console.error('MongoDB connection failed:', error.message);
@@ -719,6 +727,16 @@ async function startServer() {
   } else {
     console.warn('No MONGODB_URI configured. Starting in in-memory mode for local development.');
   }
+
+  const shutdown = async () => {
+    if (mongoUri && mongoose.connection.readyState === 1) {
+      await mongoose.connection.close();
+    }
+    process.exit(0);
+  };
+
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
 
   const port = process.env.PORT || 3000;
   app.listen(port, () => {

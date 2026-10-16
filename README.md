@@ -29,7 +29,7 @@ npm run dev
 
 Open <http://localhost:3000>.
 
-The server currently starts in in-memory mode when `MONGODB_URI` is not set. Data is reset when the process restarts. When `MONGODB_URI` is set, the server attempts a MongoDB connection, but application routes are not yet backed by MongoDB persistence.
+The server starts in in-memory mode when `MONGODB_URI` is not set. Data is reset when the process restarts. When `MONGODB_URI` is set, the server now connects to MongoDB and exposes a readiness check at `/ready`. Account and transaction routes are backed by the database when the connection is active, while the rest of the prototype remains intentionally in-memory until the broader migration work is completed.
 
 To run without Nodemon:
 
