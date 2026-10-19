@@ -1,11 +1,10 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const request = require('supertest');
-const { createApp, resetInMemoryStore } = require('../server');
+const { createTestApp } = require('./app-helper');
 
 test('weekly report uses Monday to Sunday boundaries and actual income/expenses', async () => {
-  resetInMemoryStore();
-  const app = createApp();
+  const app = createTestApp();
 
   const accountResponse = await request(app)
     .post('/api/accounts')
@@ -47,8 +46,7 @@ test('weekly report uses Monday to Sunday boundaries and actual income/expenses'
 });
 
 test('salary summaries use actual income only and ignore expected payday values', async () => {
-  resetInMemoryStore();
-  const app = createApp();
+  const app = createTestApp();
 
   const accountResponse = await request(app)
     .post('/api/accounts')

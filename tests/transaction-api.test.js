@@ -1,11 +1,10 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const request = require('supertest');
-const { createApp, resetInMemoryStore } = require('../server');
+const { createTestApp } = require('./app-helper');
 
 test('create account and transaction updates balances', async () => {
-  resetInMemoryStore();
-  const app = createApp();
+  const app = createTestApp();
 
   let response = await request(app)
     .post('/api/accounts')
@@ -36,8 +35,7 @@ test('create account and transaction updates balances', async () => {
 });
 
 test('updating a transaction refreshes account balances', async () => {
-  resetInMemoryStore();
-  const app = createApp();
+  const app = createTestApp();
 
   let response = await request(app)
     .post('/api/accounts')

@@ -37,10 +37,12 @@ function renderAccounts(accounts) {
 
     const meta = document.createElement('div');
     meta.className = 'account-meta';
-    meta.innerHTML = `
-      <strong>${account.name}</strong>
-      <span class="balance-label">${account.type}</span>
-    `;
+    const name = document.createElement('strong');
+    name.textContent = account.name;
+    const type = document.createElement('span');
+    type.className = 'balance-label';
+    type.textContent = account.type;
+    meta.append(name, type);
 
     const amount = document.createElement('div');
     const balance = Number(account.balance || 0);
@@ -68,11 +70,15 @@ function renderTransactions(transactions, containerId = 'transaction-list') {
     const amount = Number(transaction.amount || 0);
     const direction = transaction.type === 'income' ? 'positive' : 'negative';
 
-    item.innerHTML = `
-      <div><strong>${transaction.description}</strong></div>
-      <div class="balance-label">${transaction.category || 'General'} • ${new Date(transaction.occurredAt).toLocaleString()}</div>
-      <div class="amount ${direction}">${transaction.type === 'income' ? '+' : '-'}${formatCurrency(amount)}</div>
-    `;
+    const description = document.createElement('strong');
+    description.textContent = transaction.description;
+    const details = document.createElement('div');
+    details.className = 'balance-label';
+    details.textContent = `${transaction.category || 'General'} • ${new Date(transaction.occurredAt).toLocaleString()}`;
+    const value = document.createElement('div');
+    value.className = `amount ${direction}`;
+    value.textContent = `${transaction.type === 'income' ? '+' : '-'}${formatCurrency(amount)}`;
+    item.append(description, details, value);
 
     container.appendChild(item);
   });
@@ -96,9 +102,20 @@ async function loadOverview() {
   state.accounts = data.accounts || [];
 
   const accountSelect = document.getElementById('entry-account');
-  accountSelect.innerHTML = state.accounts.length
-    ? state.accounts.map((account) => `<option value="${account._id}">${account.name}</option>`).join('')
-    : '<option value="">Create an account first</option>';
+  accountSelect.replaceChildren();
+  if (state.accounts.length) {
+    state.accounts.forEach((account) => {
+      const option = document.createElement('option');
+      option.value = account._id;
+      option.textContent = account.name;
+      accountSelect.append(option);
+    });
+  } else {
+    const option = document.createElement('option');
+    option.value = '';
+    option.textContent = 'Create an account first';
+    accountSelect.append(option);
+  }
 }
 
 async function loadTransactions() {
@@ -149,7 +166,16 @@ function renderCareerProbation(probation) {
   summary.textContent = `Start ${probation.startDate} • End ${probation.endDate} • Elapsed ${elapsed} days • Remaining ${remaining} days.`;
 }
 
-function renderList(items, containerId, formatter) {
+function createTextElement(tag, text, className) {
+  const element = document.createElement(tag);
+  element.textContent = text;
+  if (className) {
+    element.className = className;
+  }
+  return element;
+}
+
+function renderList(items, containerId, renderItem) {
   const container = document.getElementById(containerId);
   container.innerHTML = '';
 
@@ -161,31 +187,44 @@ function renderList(items, containerId, formatter) {
   items.forEach((item) => {
     const entry = document.createElement('div');
     entry.className = 'mini-item';
-    entry.innerHTML = formatter(item);
+    renderItem(entry, item);
     container.appendChild(entry);
   });
 }
 
 function renderCareerData(data) {
   renderCareerProbation(data.probation);
-  renderList(data.checkpoints || [], 'checkpoint-list', (checkpoint) => `
-    <strong>${checkpoint.title}</strong>
-    <div class="balance-label">${checkpoint.date} • ${checkpoint.status}</div>
-    ${checkpoint.notes ? `<div class="balance-label">${checkpoint.notes}</div>` : ''}
-  `);
-  renderList(data.skills || [], 'skill-list', (skill) => `
-    <strong>${skill.name}</strong>
-    <div class="balance-label">${skill.status}</div>
-  `);
-  renderList(data.tasks || [], 'task-list', (task) => `
-    <strong>${task.title}</strong>
-    <div class="balance-label">${task.status}${task.dueDate ? ` • ${task.dueDate}` : ''}</div>
-    ${task.notes ? `<div class="balance-label">${task.notes}</div>` : ''}
-  `);
-  renderList(data.journal || [], 'journal-list', (entry) => `
-    <strong>${entry.date}</strong>
-    <div class="balance-label">${entry.entry}</div>
-  `);
+  renderList(data.checkpoints || [], 'checkpoint-list', (container, checkpoint) => {
+    container.append(
+      createTextElement('strong', checkpoint.title),
+      createTextElement('div', `${checkpoint.date} • ${checkpoint.status}`, 'balance-label')
+    );
+    if (checkpoint.notes) {
+      container.append(createTextElement('div', checkpoint.notes, 'balance-label'));
+    }
+  });
+  renderList(data.skills || [], 'skill-list', (container, skill) => {
+    container.append(
+      createTextElement('strong', skill.name),
+      createTextElement('div', skill.status, 'balance-label')
+    );
+  });
+  renderList(data.tasks || [], 'task-list', (container, task) => {
+    const dueDate = task.dueDate ? ` • ${task.dueDate}` : '';
+    container.append(
+      createTextElement('strong', task.title),
+      createTextElement('div', `${task.status}${dueDate}`, 'balance-label')
+    );
+    if (task.notes) {
+      container.append(createTextElement('div', task.notes, 'balance-label'));
+    }
+  });
+  renderList(data.journal || [], 'journal-list', (container, entry) => {
+    container.append(
+      createTextElement('strong', entry.date),
+      createTextElement('div', entry.entry, 'balance-label')
+    );
+  });
 }
 
 async function loadCareerData() {

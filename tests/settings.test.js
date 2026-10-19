@@ -1,11 +1,10 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const request = require('supertest');
-const { createApp, resetInMemoryStore } = require('../server');
+const { createTestApp } = require('./app-helper');
 
 test('archiving an account preserves history and excludes it from current balances', async () => {
-  resetInMemoryStore();
-  const app = createApp();
+  const app = createTestApp();
 
   const accountResponse = await request(app)
     .post('/api/accounts')
@@ -39,8 +38,7 @@ test('archiving an account preserves history and excludes it from current balanc
 });
 
 test('daily override affects only the selected date and does not change the monthly budget', async () => {
-  resetInMemoryStore();
-  const app = createApp();
+  const app = createTestApp();
 
   await request(app)
     .post('/api/budgets')

@@ -1,11 +1,10 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const request = require('supertest');
-const { createApp, resetInMemoryStore } = require('../server');
+const { createTestApp } = require('./app-helper');
 
 test('career probation config calculates elapsed and remaining days without affecting finances', async () => {
-  resetInMemoryStore();
-  const app = createApp();
+  const app = createTestApp();
 
   const response = await request(app)
     .post('/api/career/probation')
@@ -24,8 +23,7 @@ test('career probation config calculates elapsed and remaining days without affe
 });
 
 test('career checkpoint and skill records store user-entered values', async () => {
-  resetInMemoryStore();
-  const app = createApp();
+  const app = createTestApp();
 
   const checkpointResponse = await request(app)
     .post('/api/career/checkpoints')

@@ -1,11 +1,10 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const request = require('supertest');
-const { createApp, resetInMemoryStore } = require('../server');
+const { createTestApp } = require('./app-helper');
 
 test('budget and reserve planning remain separate from actual balances', async () => {
-  resetInMemoryStore();
-  const app = createApp();
+  const app = createTestApp();
 
   await request(app)
     .post('/api/accounts')
@@ -31,8 +30,7 @@ test('budget and reserve planning remain separate from actual balances', async (
 });
 
 test('missing payday planning inputs return unavailable instead of fabricated values', async () => {
-  resetInMemoryStore();
-  const app = createApp();
+  const app = createTestApp();
 
   const response = await request(app)
     .get('/api/planning/payday')
@@ -44,8 +42,7 @@ test('missing payday planning inputs return unavailable instead of fabricated va
 });
 
 test('daily target uses the monthly budget as a suggestion, not a restriction', async () => {
-  resetInMemoryStore();
-  const app = createApp();
+  const app = createTestApp();
 
   await request(app)
     .post('/api/accounts')

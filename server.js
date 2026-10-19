@@ -1,26 +1,90 @@
 const express = require('express');
 const path = require('node:path');
-const { randomUUID } = require('node:crypto');
 const dotenv = require('dotenv');
 const { createPersistenceStore, mongoose } = require('./src/persistence');
 const { getAccountBalance, getPhilippineDateKey } = require('./src/utils/finance');
 
 dotenv.config();
 
-const inMemoryStore = {
-  accounts: [],
-  transactions: [],
-  budgets: [],
-  reserves: [],
-  dailyOverrides: [],
-  career: {
-    probation: null,
-    checkpoints: [],
-    skills: [],
-    tasks: [],
-    journal: []
+function asyncRoute(handler) {
+  return (req, res, next) => Promise.resolve(handler(req, res, next)).catch(next);
+}
+
+function parseMoneyInCentavos(value) {
+  if ((typeof value !== 'number' && typeof value !== 'string') || !Number.isFinite(Number(value))) {
+    return null;
   }
-};
+
+  const normalized = String(value).trim();
+  const match = /^([+-]?)(\d+)(?:\.(\d*))?(?:e([+-]?\d+))?$/i.exec(normalized);
+  if (!match) {
+    return null;
+  }
+
+  const exponent = Number(match[4] || 0);
+  if (!Number.isSafeInteger(exponent) || Math.abs(exponent) > 100) {
+    return null;
+  }
+
+  let digits = `${match[2]}${match[3] || ''}`.replace(/^0+(?=\d)/, '');
+  const decimalPlaces = (match[3] || '').length - exponent;
+  const scale = 2 - decimalPlaces;
+  if (scale >= 0) {
+    digits += '0'.repeat(scale);
+  } else {
+    const discardedDigits = -scale;
+    if (!/^0*$/.test(digits.slice(-discardedDigits))) {
+      return null;
+    }
+    digits = digits.slice(0, -discardedDigits) || '0';
+  }
+
+  const centavos = BigInt(`${match[1] === '-' ? '-' : ''}${digits}`);
+  if (centavos < BigInt(Number.MIN_SAFE_INTEGER) || centavos > BigInt(Number.MAX_SAFE_INTEGER)) {
+    return null;
+  }
+  return Number(centavos);
+}
+
+function toPesos(centavos) {
+  return centavos == null ? centavos : Number(centavos) / 100;
+}
+
+function serializeMoneyFields(record, fields) {
+  if (!record) {
+    return record;
+  }
+  return Object.fromEntries([
+    ...Object.entries(record).map(([key, value]) => [key, fields.includes(key) ? toPesos(value) : value])
+  ]);
+}
+
+function serializeAccount(account) {
+  return serializeMoneyFields(account, ['initialBalance', 'balance']);
+}
+
+function serializeTransaction(transaction) {
+  return serializeMoneyFields(transaction, ['amount']);
+}
+
+function serializeDailyOverride(override) {
+  return serializeMoneyFields(override, ['targetAmount']);
+}
+
+function serializeDailyTarget(target) {
+  return {
+    ...serializeMoneyFields(target, ['amount', 'monthlyBudget']),
+    ...(target.override ? { override: serializeDailyOverride(target.override) } : {})
+  };
+}
+
+function isDateKey(value) {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return false;
+  }
+  const date = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
 
 function parsePhilippineDate(dateString) {
   if (!dateString) {
@@ -30,10 +94,7 @@ function parsePhilippineDate(dateString) {
   const hasTime = /T|\s/.test(dateString);
   const normalized = hasTime ? dateString : `${dateString}T00:00:00`;
   const asDate = new Date(normalized);
-  if (Number.isNaN(asDate.getTime())) {
-    return new Date();
-  }
-  return asDate;
+  return Number.isNaN(asDate.getTime()) ? new Date(NaN) : asDate;
 }
 
 function getDateKeyForTransaction(dateString) {
@@ -41,38 +102,20 @@ function getDateKeyForTransaction(dateString) {
 }
 
 function normalizePeriodRange(period, start, end) {
-  const today = new Date();
-  const currentKey = getPhilippineDateKey(today);
+  const currentKey = getPhilippineDateKey(new Date());
 
   if (period === 'today') {
-    return {
-      start: currentKey,
-      end: currentKey
-    };
+    return { start: currentKey, end: currentKey };
   }
-
   if (period === 'week') {
-    const weekStart = start || currentKey;
-    const weekEnd = end || currentKey;
-    return {
-      start: weekStart,
-      end: weekEnd
-    };
+    return { start: start || currentKey, end: end || currentKey };
   }
-
   if (period === 'month') {
     const monthPrefix = start || currentKey.slice(0, 7);
     const monthEnd = end || `${monthPrefix}-31`;
-    return {
-      start: `${monthPrefix}-01`,
-      end: monthEnd
-    };
+    return { start: `${monthPrefix}-01`, end: monthEnd };
   }
-
-  return {
-    start: start || currentKey,
-    end: end || currentKey
-  };
+  return { start: start || currentKey, end: end || currentKey };
 }
 
 function filterTransactionsByRange(transactions, start, end) {
@@ -82,13 +125,9 @@ function filterTransactionsByRange(transactions, start, end) {
   });
 }
 
-function buildAccountSummaryAtDate(account, endDateKey, transactionList = inMemoryStore.transactions) {
+function buildAccountSummaryAtDate(account, endDateKey, transactionList) {
   const relevantTransactions = transactionList.filter((transaction) => {
-    if (transaction.accountId !== account._id) {
-      return false;
-    }
-    const dateKey = getDateKeyForTransaction(transaction.occurredAt);
-    return dateKey <= endDateKey;
+    return transaction.accountId === account._id && getDateKeyForTransaction(transaction.occurredAt) <= endDateKey;
   });
 
   return {
@@ -97,40 +136,7 @@ function buildAccountSummaryAtDate(account, endDateKey, transactionList = inMemo
   };
 }
 
-function resetInMemoryStore() {
-  inMemoryStore.accounts = [];
-  inMemoryStore.transactions = [];
-  inMemoryStore.budgets = [];
-  inMemoryStore.reserves = [];
-  inMemoryStore.dailyOverrides = [];
-  inMemoryStore.career = {
-    probation: null,
-    checkpoints: [],
-    skills: [],
-    tasks: [],
-    journal: []
-  };
-}
-
-function buildAccountSummary(account) {
-  const balance = getAccountBalance(account.initialBalance, inMemoryStore.transactions.filter((transaction) => transaction.accountId === account._id));
-
-  return {
-    ...account,
-    balance
-  };
-}
-
-function getAvailableAccountBalance() {
-  return inMemoryStore.accounts.reduce((total, account) => total + buildAccountSummary(account).balance, 0);
-}
-
-function getBudgetForMonth(month) {
-  return inMemoryStore.budgets.find((budget) => budget.month === month) || null;
-}
-
-function getDailyTargetForDate(date, month) {
-  const monthBudget = getBudgetForMonth(month);
+function getDailyTargetForDate(monthBudget, date, month) {
   if (!monthBudget) {
     return {
       kind: 'suggestion',
@@ -142,15 +148,14 @@ function getDailyTargetForDate(date, month) {
     };
   }
 
-  const safeDate = new Date(date);
+  const safeDate = new Date(`${date}T00:00:00Z`);
   const monthEnd = new Date(Date.UTC(safeDate.getUTCFullYear(), safeDate.getUTCMonth() + 1, 0));
   const dayOfMonth = safeDate.getUTCDate();
   const remainingDays = Math.max(1, monthEnd.getUTCDate() - dayOfMonth + 1);
-  const amount = Math.floor(monthBudget.amount / remainingDays);
 
   return {
     kind: 'suggestion',
-    amount,
+    amount: Math.floor(monthBudget.amount / remainingDays),
     monthlyBudget: monthBudget.amount,
     month,
     date,
@@ -158,7 +163,7 @@ function getDailyTargetForDate(date, month) {
   };
 }
 
-function getPaydayRecommendation({ nextExpectedPayday, reserves = 0, accountsTotal = getAvailableAccountBalance() }) {
+function getPaydayRecommendation({ nextExpectedPayday, reserves = 0, accountsTotal = 0 }) {
   const availableBalance = accountsTotal - Number(reserves || 0);
 
   if (!nextExpectedPayday || !Number.isFinite(availableBalance)) {
@@ -174,7 +179,7 @@ function getPaydayRecommendation({ nextExpectedPayday, reserves = 0, accountsTot
   const diffMs = targetDate.getTime() - now.getTime();
   const days = Math.max(1, Math.ceil(diffMs / 86400000));
 
-  if (availableBalance <= 0 || days <= 0) {
+  if (availableBalance <= 0 || diffMs <= 0) {
     return {
       status: 'unavailable',
       amount: null,
@@ -198,28 +203,12 @@ function getPaydayRecommendation({ nextExpectedPayday, reserves = 0, accountsTot
   };
 }
 
-async function ensureAccountExists(accountId) {
-  const account = inMemoryStore.accounts.find((item) => item._id === accountId);
-  if (account) {
-    return account;
-  }
-
-  if (mongoose.connection.readyState === 1) {
-    const mongoAccount = await mongoose.connection.db.collection('accounts').findOne({ _id: accountId });
-    if (mongoAccount) {
-      return mongoAccount;
-    }
-  }
-
-  throw new Error('Account not found');
-}
-
-function createApp() {
-  const persistenceStore = createPersistenceStore({ mongoUri: process.env.MONGODB_URI });
+function createApp({ persistenceStore } = {}) {
+  const store = persistenceStore || createPersistenceStore({ mongoUri: process.env.MONGODB_URI });
   const app = express();
-  app.locals.persistenceStore = persistenceStore;
+  app.locals.persistenceStore = store;
 
-  app.use(express.json());
+  app.use(express.json({ limit: '1mb' }));
   app.use(express.static(path.join(__dirname, 'public')));
 
   app.get('/', (req, res) => {
@@ -227,127 +216,140 @@ function createApp() {
   });
 
   app.get('/health', (req, res) => {
-    res.json({ ok: true, message: 'Pocket Ledger server is running.', database: persistenceStore.mode, ready: persistenceStore.isReady() });
+    res.json({
+      ok: true,
+      message: 'Pocket Ledger server is running.',
+      database: store.mode,
+      ready: store.isReady()
+    });
   });
 
-  app.get('/ready', async (req, res) => {
-    const ready = persistenceStore.isReady();
-    if (!ready) {
+  app.get('/ready', asyncRoute(async (req, res) => {
+    try {
+      await store.connect();
+    } catch {
       return res.status(503).json({ ok: false, ready: false, message: 'Database not ready.' });
     }
+    if (!store.isReady()) {
+      return res.status(503).json({ ok: false, ready: false, message: 'Database not ready.' });
+    }
+    return res.json({ ok: true, ready: true, database: store.mode });
+  }));
 
-    return res.json({ ok: true, ready: true, database: persistenceStore.mode });
-  });
+  app.use('/api', asyncRoute(async (req, res, next) => {
+    await store.connect();
+    if (!store.isReady()) {
+      return res.status(503).json({ error: 'Database is unavailable.' });
+    }
+    return next();
+  }));
 
-  app.get('/api/accounts', async (req, res) => {
-    const accounts = await persistenceStore.listAccounts();
-    res.json(accounts);
-  });
+  app.get('/api/accounts', asyncRoute(async (req, res) => {
+    res.json((await store.listAccounts()).map(serializeAccount));
+  }));
 
-  app.post('/api/accounts', async (req, res) => {
+  app.post('/api/accounts', asyncRoute(async (req, res) => {
     const { name, type, initialBalance = 0 } = req.body;
-
     if (!name || !type) {
       return res.status(400).json({ error: 'Account name and type are required.' });
     }
+    const initialBalanceCentavos = parseMoneyInCentavos(initialBalance);
+    if (initialBalanceCentavos === null) {
+      return res.status(400).json({ error: 'Initial balance must be a valid amount with no more than two decimal places.' });
+    }
 
-    const account = await persistenceStore.createAccount({ name, type, initialBalance });
-    return res.status(201).json(account);
-  });
+    const account = await store.createAccount({ name, type, initialBalance: initialBalanceCentavos });
+    return res.status(201).json(serializeAccount(account));
+  }));
 
-  app.get('/api/transactions', async (req, res) => {
-    const { accountId } = req.query;
-    const transactions = await persistenceStore.listTransactions(accountId || null);
-    res.json(transactions);
-  });
+  app.get('/api/transactions', asyncRoute(async (req, res) => {
+    res.json((await store.listTransactions(req.query.accountId || null)).map(serializeTransaction));
+  }));
 
-  app.post('/api/transactions', async (req, res) => {
+  app.post('/api/transactions', asyncRoute(async (req, res) => {
     const { accountId, type, amount, description, category, occurredAt, notes } = req.body;
-
-    if (!accountId || !type || !description || !amount) {
+    if (!accountId || !type || !description || amount == null) {
       return res.status(400).json({ error: 'Account, type, description, and amount are required.' });
     }
-
-    try {
-      await ensureAccountExists(accountId);
-    } catch (error) {
-      return res.status(404).json({ error: error.message });
+    if (!await store.getAccount(accountId)) {
+      return res.status(404).json({ error: 'Account not found.' });
     }
-
     if (!['income', 'expense'].includes(type)) {
       return res.status(400).json({ error: 'Transaction type must be income or expense.' });
     }
-
-    const parsedAmount = Number(amount);
-    if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
-      return res.status(400).json({ error: 'Amount must be a positive number.' });
+    const amountCentavos = parseMoneyInCentavos(amount);
+    if (amountCentavos === null || amountCentavos <= 0) {
+      return res.status(400).json({ error: 'Amount must be positive and have no more than two decimal places.' });
+    }
+    const date = occurredAt ? new Date(occurredAt) : new Date();
+    if (Number.isNaN(date.getTime())) {
+      return res.status(400).json({ error: 'Transaction date must be valid.' });
     }
 
-    const transaction = await persistenceStore.createTransaction({
+    const transaction = await store.createTransaction({
       accountId,
       type,
-      amount: parsedAmount,
+      amount: amountCentavos,
       description,
       category: category || null,
-      occurredAt: occurredAt || new Date().toISOString(),
+      occurredAt: date,
       notes: notes || ''
     });
+    return res.status(201).json(serializeTransaction(transaction));
+  }));
 
-    return res.status(201).json(transaction);
-  });
-
-  app.patch('/api/transactions/:id', async (req, res) => {
-    const existing = await persistenceStore.listTransactions();
-    const transaction = existing.find((item) => item._id === req.params.id) || inMemoryStore.transactions.find((item) => item._id === req.params.id);
-
+  app.patch('/api/transactions/:id', asyncRoute(async (req, res) => {
+    const transaction = await store.getTransaction(req.params.id);
     if (!transaction) {
       return res.status(404).json({ error: 'Transaction not found.' });
     }
 
     const { amount, description, category, notes, type, accountId, occurredAt } = req.body;
-    const nextPatch = {};
-
+    const patch = {};
     if (amount !== undefined) {
-      const parsedAmount = Number(amount);
-      if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
-        return res.status(400).json({ error: 'Amount must be a positive number.' });
+      const amountCentavos = parseMoneyInCentavos(amount);
+      if (amountCentavos === null || amountCentavos <= 0) {
+        return res.status(400).json({ error: 'Amount must be positive and have no more than two decimal places.' });
       }
-      nextPatch.amount = parsedAmount;
+      patch.amount = amountCentavos;
     }
-
-    if (description !== undefined) nextPatch.description = description;
-    if (category !== undefined) nextPatch.category = category;
-    if (notes !== undefined) nextPatch.notes = notes;
-    if (type !== undefined) nextPatch.type = type;
+    if (description !== undefined) patch.description = description;
+    if (category !== undefined) patch.category = category;
+    if (notes !== undefined) patch.notes = notes;
+    if (type !== undefined) {
+      if (!['income', 'expense'].includes(type)) {
+        return res.status(400).json({ error: 'Transaction type must be income or expense.' });
+      }
+      patch.type = type;
+    }
     if (accountId !== undefined) {
-      try {
-        await ensureAccountExists(accountId);
-        nextPatch.accountId = accountId;
-      } catch (error) {
-        return res.status(404).json({ error: error.message });
+      if (!await store.getAccount(accountId)) {
+        return res.status(404).json({ error: 'Account not found.' });
       }
+      patch.accountId = accountId;
     }
-    if (occurredAt !== undefined) nextPatch.occurredAt = occurredAt;
-
-    const updated = await persistenceStore.updateTransaction(req.params.id, nextPatch);
-    if (!updated) {
-      return res.status(404).json({ error: 'Transaction not found.' });
+    if (occurredAt !== undefined) {
+      const date = new Date(occurredAt);
+      if (Number.isNaN(date.getTime())) {
+        return res.status(400).json({ error: 'Transaction date must be valid.' });
+      }
+      patch.occurredAt = date;
     }
 
-    return res.json(updated);
-  });
+    return res.json(serializeTransaction(await store.updateTransaction(req.params.id, patch)));
+  }));
 
-  app.delete('/api/transactions/:id', async (req, res) => {
-    const deleted = await persistenceStore.deleteTransaction(req.params.id);
+  app.delete('/api/transactions/:id', asyncRoute(async (req, res) => {
+    const deleted = await store.deleteTransaction(req.params.id);
     if (!deleted) {
       return res.status(404).json({ error: 'Transaction not found.' });
     }
-    return res.json(deleted);
-  });
+    return res.json({ ...deleted, transaction: serializeTransaction(deleted.transaction) });
+  }));
 
-  app.get('/api/reports/overview', async (req, res) => {
-    const accounts = (await persistenceStore.listAccounts()).filter((account) => !account.archived);
-    const transactions = await persistenceStore.listTransactions();
+  app.get('/api/reports/overview', asyncRoute(async (req, res) => {
+    const accounts = (await store.listAccounts()).filter((account) => !account.archived);
+    const transactions = await store.listTransactions();
     const income = transactions
       .filter((transaction) => transaction.type === 'income')
       .reduce((total, transaction) => total + Number(transaction.amount || 0), 0);
@@ -356,19 +358,18 @@ function createApp() {
       .reduce((total, transaction) => total + Number(transaction.amount || 0), 0);
 
     res.json({
-      income,
-      expenses,
-      netCashFlow: income - expenses,
-      accounts
+      income: toPesos(income),
+      expenses: toPesos(expenses),
+      netCashFlow: toPesos(income - expenses),
+      accounts: accounts.map(serializeAccount)
     });
-  });
+  }));
 
-  app.get('/api/overview', async (req, res) => {
+  app.get('/api/overview', asyncRoute(async (req, res) => {
     const month = String(req.query.month || getPhilippineDateKey(new Date()).slice(0, 7)).trim();
-    const activeAccounts = (await persistenceStore.listAccounts()).filter((account) => !account.archived);
-    const monthlyTransactions = (await persistenceStore.listTransactions()).filter((transaction) => {
-      const dateKey = getDateKeyForTransaction(transaction.occurredAt);
-      return dateKey.startsWith(month);
+    const accounts = (await store.listAccounts()).filter((account) => !account.archived);
+    const monthlyTransactions = (await store.listTransactions()).filter((transaction) => {
+      return getDateKeyForTransaction(transaction.occurredAt).startsWith(month);
     });
     const monthlyIncome = monthlyTransactions
       .filter((transaction) => transaction.type === 'income')
@@ -376,26 +377,29 @@ function createApp() {
     const monthlyExpenses = monthlyTransactions
       .filter((transaction) => transaction.type === 'expense')
       .reduce((total, transaction) => total + Number(transaction.amount || 0), 0);
-    const currentBalance = activeAccounts.reduce((total, account) => total + Number(account.balance || 0), 0);
+    const currentBalance = accounts.reduce((total, account) => total + Number(account.balance || 0), 0);
 
     res.json({
       month,
       salaryMonth: month,
       queryMonth: month,
-      currentBalance,
-      monthlyIncome,
-      monthlyExpenses,
-      netCashFlow: monthlyIncome - monthlyExpenses,
-      accounts: activeAccounts
+      currentBalance: toPesos(currentBalance),
+      monthlyIncome: toPesos(monthlyIncome),
+      monthlyExpenses: toPesos(monthlyExpenses),
+      netCashFlow: toPesos(monthlyIncome - monthlyExpenses),
+      accounts: accounts.map(serializeAccount)
     });
-  });
+  }));
 
-  app.get('/api/reports/period', async (req, res) => {
+  app.get('/api/reports/period', asyncRoute(async (req, res) => {
     const period = req.query.period || 'custom';
     const start = String(req.query.start || '').trim() || null;
     const end = String(req.query.end || '').trim() || null;
+    if ((start && !isDateKey(start)) || (end && !isDateKey(end))) {
+      return res.status(400).json({ error: 'Report dates must be valid ISO dates.' });
+    }
     const range = normalizePeriodRange(period, start, end);
-    const transactions = await persistenceStore.listTransactions();
+    const transactions = await store.listTransactions();
     const relevantTransactions = filterTransactionsByRange(transactions, range.start, range.end);
     const income = relevantTransactions
       .filter((transaction) => transaction.type === 'income')
@@ -403,296 +407,212 @@ function createApp() {
     const expenses = relevantTransactions
       .filter((transaction) => transaction.type === 'expense')
       .reduce((total, transaction) => total + Number(transaction.amount || 0), 0);
-
-    const accountTransactions = await persistenceStore.listTransactions();
-    const accountBalances = (await persistenceStore.listAccounts()).map((account) => buildAccountSummaryAtDate(account, range.end, accountTransactions));
+    const accountBalances = (await store.listAccounts()).map((account) => {
+      return buildAccountSummaryAtDate(account, range.end, transactions);
+    });
 
     res.json({
       period,
       start: range.start,
       end: range.end,
-      income,
-      expenses,
-      netCashFlow: income - expenses,
+      income: toPesos(income),
+      expenses: toPesos(expenses),
+      netCashFlow: toPesos(income - expenses),
       count: relevantTransactions.length,
-      transactions: relevantTransactions,
-      accountBalances
+      transactions: relevantTransactions.map(serializeTransaction),
+      accountBalances: accountBalances.map(serializeAccount)
     });
-  });
+  }));
 
-  app.get('/api/reports/salary', async (req, res) => {
+  app.get('/api/reports/salary', asyncRoute(async (req, res) => {
     const month = String(req.query.month || '').trim();
+    if (month && !/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
+      return res.status(400).json({ error: 'Month must use YYYY-MM format.' });
+    }
     const monthPrefix = month || getPhilippineDateKey(new Date()).slice(0, 7);
-    const monthTransactions = (await persistenceStore.listTransactions()).filter((transaction) => {
-      if (transaction.type !== 'income') {
-        return false;
-      }
-      if (transaction.category !== 'Salary') {
-        return false;
-      }
-      return getDateKeyForTransaction(transaction.occurredAt).startsWith(monthPrefix);
+    const monthTransactions = (await store.listTransactions()).filter((transaction) => {
+      return transaction.type === 'income'
+        && transaction.category === 'Salary'
+        && getDateKeyForTransaction(transaction.occurredAt).startsWith(monthPrefix);
     });
-
     const totalIncome = monthTransactions.reduce((total, transaction) => total + Number(transaction.amount || 0), 0);
 
     res.json({
       month: monthPrefix,
-      totalIncome,
+      totalIncome: toPesos(totalIncome),
       count: monthTransactions.length,
-      transactions: monthTransactions
+      transactions: monthTransactions.map(serializeTransaction)
     });
-  });
+  }));
 
-  app.post('/api/career/probation', (req, res) => {
+  app.post('/api/career/probation', asyncRoute(async (req, res) => {
     const { startDate, endDate } = req.body;
-
-    if (!startDate || !endDate) {
-      return res.status(400).json({ error: 'Probation start and end dates are required.' });
+    if (!isDateKey(startDate) || !isDateKey(endDate)) {
+      return res.status(400).json({ error: 'Probation start and end dates must be valid ISO dates.' });
     }
-
     const start = new Date(`${startDate}T00:00:00+08:00`);
     const end = new Date(`${endDate}T00:00:00+08:00`);
     const now = new Date();
-
-    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
-      return res.status(400).json({ error: 'Probation dates must be valid ISO dates.' });
-    }
-
-    const elapsedDays = Math.max(0, Math.floor((now.getTime() - start.getTime()) / 86400000));
-    const remainingDays = Math.max(0, Math.floor((end.getTime() - now.getTime()) / 86400000));
-
-    const probation = {
-      _id: randomUUID(),
+    const probation = await store.saveCareerProbation({
       startDate,
       endDate,
-      elapsedDays,
-      remainingDays,
+      elapsedDays: Math.max(0, Math.floor((now.getTime() - start.getTime()) / 86400000)),
+      remainingDays: Math.max(0, Math.floor((end.getTime() - now.getTime()) / 86400000)),
       updatedAt: new Date().toISOString()
-    };
-
-    inMemoryStore.career.probation = probation;
+    });
     return res.status(201).json(probation);
-  });
+  }));
 
-  app.get('/api/career/probation', (req, res) => {
-    res.json(inMemoryStore.career.probation || { status: 'not-configured' });
-  });
+  app.get('/api/career/probation', asyncRoute(async (req, res) => {
+    res.json(await store.getCareerProbation() || { status: 'not-configured' });
+  }));
 
-  app.post('/api/career/checkpoints', (req, res) => {
-    const { date, title, notes, status } = req.body;
-
-    if (!date || !title || !status) {
-      return res.status(400).json({ error: 'Checkpoint date, title, and status are required.' });
+  const careerRoutes = [
+    {
+      path: 'checkpoints',
+      required: ['date', 'title', 'status'],
+      error: 'Checkpoint date, title, and status are required.',
+      fields: ({ date, title, notes, status }) => ({ date, title, notes: notes || '', status })
+    },
+    {
+      path: 'skills',
+      required: ['name', 'status'],
+      error: 'Skill name and status are required.',
+      fields: ({ name, status }) => ({ name, status })
+    },
+    {
+      path: 'tasks',
+      required: ['title', 'status'],
+      error: 'Task title and status are required.',
+      fields: ({ title, status, dueDate, notes }) => ({ title, status, dueDate: dueDate || null, notes: notes || '' })
+    },
+    {
+      path: 'journal',
+      required: ['date', 'entry'],
+      error: 'Journal date and entry are required.',
+      fields: ({ date, entry }) => ({ date, entry })
     }
+  ];
 
-    const checkpoint = {
-      _id: randomUUID(),
-      date,
-      title,
-      notes: notes || '',
-      status,
-      createdAt: new Date().toISOString()
-    };
+  for (const route of careerRoutes) {
+    app.post(`/api/career/${route.path}`, asyncRoute(async (req, res) => {
+      if (route.required.some((field) => !req.body[field])) {
+        return res.status(400).json({ error: route.error });
+      }
+      if (['checkpoints', 'journal'].includes(route.path) && !isDateKey(req.body.date)) {
+        return res.status(400).json({ error: 'Date must be a valid ISO date.' });
+      }
+      const record = await store.createCareerEntry(route.path, route.fields(req.body));
+      return res.status(201).json(record);
+    }));
+    app.get(`/api/career/${route.path}`, asyncRoute(async (req, res) => {
+      res.json(await store.listCareerEntries(route.path));
+    }));
+  }
 
-    inMemoryStore.career.checkpoints.push(checkpoint);
-    return res.status(201).json(checkpoint);
-  });
+  app.get('/api/budgets', asyncRoute(async (req, res) => {
+    res.json((await store.listBudgets()).map((budget) => serializeMoneyFields(budget, ['amount'])));
+  }));
 
-  app.get('/api/career/checkpoints', (req, res) => {
-    res.json(inMemoryStore.career.checkpoints);
-  });
-
-  app.post('/api/career/skills', (req, res) => {
-    const { name, status } = req.body;
-
-    if (!name || !status) {
-      return res.status(400).json({ error: 'Skill name and status are required.' });
-    }
-
-    const skill = {
-      _id: randomUUID(),
-      name,
-      status,
-      createdAt: new Date().toISOString()
-    };
-
-    inMemoryStore.career.skills.push(skill);
-    return res.status(201).json(skill);
-  });
-
-  app.get('/api/career/skills', (req, res) => {
-    res.json(inMemoryStore.career.skills);
-  });
-
-  app.post('/api/career/tasks', (req, res) => {
-    const { title, status, dueDate, notes } = req.body;
-
-    if (!title || !status) {
-      return res.status(400).json({ error: 'Task title and status are required.' });
-    }
-
-    const task = {
-      _id: randomUUID(),
-      title,
-      status,
-      dueDate: dueDate || null,
-      notes: notes || '',
-      createdAt: new Date().toISOString()
-    };
-
-    inMemoryStore.career.tasks.push(task);
-    return res.status(201).json(task);
-  });
-
-  app.get('/api/career/tasks', (req, res) => {
-    res.json(inMemoryStore.career.tasks);
-  });
-
-  app.post('/api/career/journal', (req, res) => {
-    const { date, entry } = req.body;
-
-    if (!date || !entry) {
-      return res.status(400).json({ error: 'Journal date and entry are required.' });
-    }
-
-    const journalEntry = {
-      _id: randomUUID(),
-      date,
-      entry,
-      createdAt: new Date().toISOString()
-    };
-
-    inMemoryStore.career.journal.push(journalEntry);
-    return res.status(201).json(journalEntry);
-  });
-
-  app.get('/api/career/journal', (req, res) => {
-    res.json(inMemoryStore.career.journal);
-  });
-
-  app.get('/api/budgets', (req, res) => {
-    res.json(inMemoryStore.budgets);
-  });
-
-  app.post('/api/budgets', (req, res) => {
+  app.post('/api/budgets', asyncRoute(async (req, res) => {
     const { month, amount } = req.body;
-
     if (!month || amount == null) {
       return res.status(400).json({ error: 'Month and budget amount are required.' });
     }
-
-    const numericAmount = Number(amount);
-    if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
-      return res.status(400).json({ error: 'Budget amount must be a positive number.' });
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
+      return res.status(400).json({ error: 'Month must use YYYY-MM format.' });
+    }
+    const amountCentavos = parseMoneyInCentavos(amount);
+    if (amountCentavos === null || amountCentavos <= 0) {
+      return res.status(400).json({ error: 'Budget amount must be positive and have no more than two decimal places.' });
     }
 
-    const existingBudget = inMemoryStore.budgets.find((budget) => budget.month === month);
-    if (existingBudget) {
-      existingBudget.amount = numericAmount;
-      return res.json(existingBudget);
-    }
+    const result = await store.upsertBudget(month, amountCentavos);
+    return res.status(result.created ? 201 : 200).json(serializeMoneyFields(result.record, ['amount']));
+  }));
 
-    const budget = {
-      _id: randomUUID(),
-      month,
-      amount: numericAmount,
-      createdAt: new Date().toISOString()
-    };
-    inMemoryStore.budgets.push(budget);
-    return res.status(201).json(budget);
-  });
-
-  app.post('/api/planning/reserves', (req, res) => {
+  app.post('/api/planning/reserves', asyncRoute(async (req, res) => {
     const { amount, label = 'Reserve' } = req.body;
-    const numericAmount = Number(amount);
-
-    if (!Number.isFinite(numericAmount) || numericAmount < 0) {
-      return res.status(400).json({ error: 'Reserve amount must be zero or greater.' });
+    const amountCentavos = parseMoneyInCentavos(amount);
+    if (amountCentavos === null || amountCentavos < 0) {
+      return res.status(400).json({ error: 'Reserve amount must be non-negative and have no more than two decimal places.' });
     }
+    const reserve = await store.createReserve({ amount: amountCentavos, label });
+    return res.status(201).json(serializeMoneyFields(reserve, ['amount']));
+  }));
 
-    const reserve = {
-      _id: randomUUID(),
-      amount: numericAmount,
-      label,
-      createdAt: new Date().toISOString()
-    };
-
-    inMemoryStore.reserves.push(reserve);
-    return res.status(201).json(reserve);
-  });
-
-  app.post('/api/accounts/:id/archive', (req, res) => {
-    const account = inMemoryStore.accounts.find((item) => item._id === req.params.id);
-
-    if (!account) {
-      return res.status(404).json({ error: 'Account not found.' });
-    }
-
+  app.post('/api/accounts/:id/archive', asyncRoute(async (req, res) => {
     if (req.body.confirm !== true) {
       return res.status(400).json({ error: 'Account archive requires explicit confirmation.' });
     }
+    const account = await store.archiveAccount(req.params.id);
+    if (!account) {
+      return res.status(404).json({ error: 'Account not found.' });
+    }
+    return res.json(serializeAccount(account));
+  }));
 
-    account.archived = true;
-    return res.json(account);
-  });
-
-  app.post('/api/daily-limits/override', (req, res) => {
+  app.post('/api/daily-limits/override', asyncRoute(async (req, res) => {
     const { date, targetAmount, reason } = req.body;
-
     if (!date || targetAmount == null) {
       return res.status(400).json({ error: 'Date and override target are required.' });
     }
-
-    const parsedAmount = Number(targetAmount);
-    if (!Number.isFinite(parsedAmount) || parsedAmount < 0) {
-      return res.status(400).json({ error: 'Override target amount must be zero or greater.' });
+    if (!isDateKey(date)) {
+      return res.status(400).json({ error: 'Date must be a valid ISO date.' });
     }
-
-    const override = {
-      _id: randomUUID(),
+    const targetAmountCentavos = parseMoneyInCentavos(targetAmount);
+    if (targetAmountCentavos === null || targetAmountCentavos < 0) {
+      return res.status(400).json({ error: 'Override target must be non-negative and have no more than two decimal places.' });
+    }
+    const override = await store.upsertDailyOverride({
       date,
-      targetAmount: parsedAmount,
-      reason: reason || '',
-      createdAt: new Date().toISOString()
-    };
+      targetAmount: targetAmountCentavos,
+      reason: reason || ''
+    });
+    return res.status(201).json(serializeDailyOverride(override));
+  }));
 
-    inMemoryStore.dailyOverrides = inMemoryStore.dailyOverrides.filter((item) => item.date !== date);
-    inMemoryStore.dailyOverrides.push(override);
-    return res.status(201).json(override);
-  });
-
-  app.get('/api/daily-limits/override', (req, res) => {
-    const { date } = req.query;
-    if (!date) {
-      return res.json(inMemoryStore.dailyOverrides);
+  app.get('/api/daily-limits/override', asyncRoute(async (req, res) => {
+    if (!req.query.date) {
+      return res.json((await store.listDailyOverrides()).map(serializeDailyOverride));
     }
+    if (!isDateKey(req.query.date)) {
+      return res.status(400).json({ error: 'Date must be a valid ISO date.' });
+    }
+    return res.json(serializeDailyOverride(await store.getDailyOverride(req.query.date)));
+  }));
 
-    const override = inMemoryStore.dailyOverrides.find((item) => item.date === date);
-    return res.json(override || null);
-  });
-
-  app.get('/api/planning/payday', async (req, res) => {
-    const nextExpectedPayday = req.query.nextExpectedPayday || null;
-    const accounts = await persistenceStore.listAccounts();
+  app.get('/api/planning/payday', asyncRoute(async (req, res) => {
+    const [accounts, reserves] = await Promise.all([store.listAccounts(), store.listReserves()]);
     const accountsTotal = accounts.reduce((total, account) => total + Number(account.balance || 0), 0);
-    const reserves = inMemoryStore.reserves.reduce((total, reserve) => total + Number(reserve.amount || 0), 0);
-    const recommendation = getPaydayRecommendation({ nextExpectedPayday, reserves, accountsTotal });
-    if (recommendation && recommendation.inputs) {
-      recommendation.inputs.availableBalance = Number(accountsTotal);
+    const reserveTotal = reserves.reduce((total, reserve) => total + Number(reserve.amount || 0), 0);
+    const recommendation = getPaydayRecommendation({
+      nextExpectedPayday: req.query.nextExpectedPayday || null,
+      reserves: reserveTotal,
+      accountsTotal
+    });
+    if (recommendation.amount != null) {
+      recommendation.amount = toPesos(recommendation.amount);
+    }
+    if (recommendation.inputs) {
+      recommendation.inputs.availableBalance = toPesos(recommendation.inputs.availableBalance);
+      recommendation.inputs.reserves = toPesos(recommendation.inputs.reserves);
     }
     res.json(recommendation);
-  });
+  }));
 
-  app.get('/api/planning/daily-target', (req, res) => {
-    const { date, month } = req.query;
-    const targetDate = date || getPhilippineDateKey(new Date());
-    const targetMonth = month || targetDate.slice(0, 7);
-    const baseData = getDailyTargetForDate(targetDate, targetMonth);
-    const override = inMemoryStore.dailyOverrides.find((item) => item.date === targetDate);
-
+  app.get('/api/planning/daily-target', asyncRoute(async (req, res) => {
+    const targetDate = req.query.date || getPhilippineDateKey(new Date());
+    const targetMonth = req.query.month || targetDate.slice(0, 7);
+    if (!isDateKey(targetDate) || !/^\d{4}-(0[1-9]|1[0-2])$/.test(targetMonth)) {
+      return res.status(400).json({ error: 'Date and month must be valid ISO date values.' });
+    }
+    const budget = await store.getBudget(targetMonth);
+    const result = getDailyTargetForDate(budget, targetDate, targetMonth);
+    const override = await store.getDailyOverride(targetDate);
     if (override) {
-      return res.json({
-        ...baseData,
+      return res.json(serializeDailyTarget({
+        ...result,
         kind: 'suggestion',
         override: {
           date: override.date,
@@ -700,54 +620,75 @@ function createApp() {
           reason: override.reason
         },
         amount: override.targetAmount,
-        monthlyBudget: baseData.monthlyBudget,
+        monthlyBudget: result.monthlyBudget,
         date: targetDate,
         month: targetMonth
-      });
+      }));
     }
+    return res.json(serializeDailyTarget(result));
+  }));
 
-    res.json(baseData);
+  app.use((error, req, res, next) => {
+    if (res.headersSent) {
+      return next(error);
+    }
+    if (error instanceof SyntaxError && error.status === 400 && 'body' in error) {
+      return res.status(400).json({ error: 'Request body must contain valid JSON.' });
+    }
+    if (error.name === 'ValidationError' || error.name === 'CastError') {
+      return res.status(400).json({ error: 'Request contains invalid data.' });
+    }
+    if (error.code === 11000) {
+      return res.status(409).json({ error: 'A record with those values already exists.' });
+    }
+    if (!store.isReady()) {
+      console.error('Request failed because the database is unavailable.');
+      return res.status(503).json({ error: 'Database is unavailable.' });
+    }
+    console.error('Request failed:', error.name || 'Error');
+    return res.status(500).json({ error: 'The request could not be completed.' });
   });
 
   return app;
 }
 
 async function startServer() {
-  const app = createApp();
   const mongoUri = process.env.MONGODB_URI;
-
-  if (mongoUri) {
-    try {
-      await app.locals.persistenceStore.connect();
-      console.log('MongoDB connected');
-    } catch (error) {
-      console.error('MongoDB connection failed:', error.message);
-      process.exit(1);
-    }
-  } else {
-    console.warn('No MONGODB_URI configured. Starting in in-memory mode for local development.');
+  if (!mongoUri) {
+    throw new Error('MONGODB_URI must be configured before starting the application.');
   }
 
-  const shutdown = async () => {
-    if (mongoUri && mongoose.connection.readyState === 1) {
-      await mongoose.connection.close();
-    }
-    process.exit(0);
-  };
+  const app = createApp();
+  const persistenceStore = app.locals.persistenceStore;
+  try {
+    await persistenceStore.connect();
+  } catch (error) {
+    console.error('MongoDB connection failed. Verify MONGODB_URI and database network access.');
+    throw error;
+  }
 
-  process.on('SIGINT', shutdown);
-  process.on('SIGTERM', shutdown);
-
-  const port = process.env.PORT || 3000;
-  app.listen(port, () => {
-    console.log(`Server running on http://localhost:${port}`);
+  const server = app.listen(process.env.PORT || 3000, () => {
+    console.log(`Server listening on port ${process.env.PORT || 3000}`);
   });
-
+  const shutdown = async () => {
+    server.close(async () => {
+      await persistenceStore.close();
+      process.exitCode = 0;
+    });
+  };
+  process.once('SIGINT', shutdown);
+  process.once('SIGTERM', shutdown);
   return app;
 }
 
 if (require.main === module) {
-  startServer();
+  startServer().catch(() => {
+    process.exitCode = 1;
+  });
 }
 
-module.exports = { createApp, startServer, resetInMemoryStore };
+const app = createApp();
+module.exports = app;
+module.exports.createApp = createApp;
+module.exports.startServer = startServer;
+module.exports.mongoose = mongoose;

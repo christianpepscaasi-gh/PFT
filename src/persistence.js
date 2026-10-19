@@ -1,303 +1,448 @@
 const mongoose = require('mongoose');
 const { randomUUID } = require('node:crypto');
-const { getAccountBalance, getPhilippineDateKey } = require('./utils/finance');
+const { getAccountBalance } = require('./utils/finance');
 
-const inMemoryStore = {
-  accounts: [],
-  transactions: [],
-  budgets: [],
-  reserves: [],
-  dailyOverrides: [],
-  career: {
-    probation: null,
-    checkpoints: [],
-    skills: [],
-    tasks: [],
-    journal: []
+const moneyField = {
+  type: Number,
+  required: true,
+  min: 0,
+  validate: {
+    validator: Number.isSafeInteger,
+    message: 'Money values must be integer centavos.'
   }
 };
 
-function resetInMemoryStore() {
-  inMemoryStore.accounts = [];
-  inMemoryStore.transactions = [];
-  inMemoryStore.budgets = [];
-  inMemoryStore.reserves = [];
-  inMemoryStore.dailyOverrides = [];
-  inMemoryStore.career = {
-    probation: null,
-    checkpoints: [],
-    skills: [],
-    tasks: [],
-    journal: []
-  };
-}
+const signedMoneyField = {
+  type: Number,
+  required: true,
+  validate: {
+    validator: Number.isSafeInteger,
+    message: 'Money values must be integer centavos.'
+  }
+};
+
+const timestampOptions = { timestamps: true, versionKey: false };
 
 const accountSchema = new mongoose.Schema({
   _id: { type: String, default: () => randomUUID() },
   name: { type: String, required: true },
   type: { type: String, required: true },
-  initialBalance: { type: Number, default: 0 },
-  archived: { type: Boolean, default: false },
-  createdAt: { type: Date, default: Date.now },
-  updatedAt: { type: Date, default: Date.now }
-}, { _id: false });
+  initialBalance: { ...signedMoneyField, default: 0 },
+  archived: { type: Boolean, default: false }
+}, { ...timestampOptions, _id: false });
 
 const transactionSchema = new mongoose.Schema({
   _id: { type: String, default: () => randomUUID() },
-  accountId: { type: String, required: true },
+  accountId: { type: String, required: true, index: true },
   type: { type: String, enum: ['income', 'expense'], required: true },
-  amount: { type: Number, required: true },
+  amount: { ...moneyField, min: 1 },
   description: { type: String, required: true },
   category: { type: String, default: null },
   notes: { type: String, default: '' },
-  occurredAt: { type: Date, required: true },
-  createdAt: { type: Date, default: Date.now },
-  updatedAt: { type: Date, default: Date.now }
-}, { _id: false });
+  occurredAt: { type: Date, required: true }
+}, { ...timestampOptions, _id: false });
+transactionSchema.index({ accountId: 1, occurredAt: 1 });
+
+const budgetSchema = new mongoose.Schema({
+  _id: { type: String, default: () => randomUUID() },
+  month: { type: String, required: true },
+  amount: { ...moneyField, min: 1 }
+}, { ...timestampOptions, _id: false });
+budgetSchema.index({ month: 1 }, { unique: true });
+
+const reserveSchema = new mongoose.Schema({
+  _id: { type: String, default: () => randomUUID() },
+  label: { type: String, default: 'Reserve' },
+  amount: moneyField
+}, { ...timestampOptions, _id: false });
+
+const dailyOverrideSchema = new mongoose.Schema({
+  _id: { type: String, default: () => randomUUID() },
+  date: { type: String, required: true },
+  targetAmount: moneyField,
+  reason: { type: String, default: '' }
+}, { ...timestampOptions, _id: false });
+dailyOverrideSchema.index({ date: 1 }, { unique: true });
+
+function createCareerSchema(fields) {
+  return new mongoose.Schema({
+    _id: { type: String, default: () => randomUUID() },
+    ...fields
+  }, { ...timestampOptions, _id: false });
+}
+
+const careerModels = {
+  probation: mongoose.models.CareerProbation || mongoose.model('CareerProbation', createCareerSchema({
+    startDate: { type: String, required: true },
+    endDate: { type: String, required: true },
+    elapsedDays: { type: Number, required: true },
+    remainingDays: { type: Number, required: true }
+  }), 'career_probation'),
+  checkpoints: mongoose.models.CareerCheckpoint || mongoose.model('CareerCheckpoint', createCareerSchema({
+    date: { type: String, required: true },
+    title: { type: String, required: true },
+    notes: { type: String, default: '' },
+    status: { type: String, required: true }
+  }), 'career_checkpoints'),
+  skills: mongoose.models.CareerSkill || mongoose.model('CareerSkill', createCareerSchema({
+    name: { type: String, required: true },
+    status: { type: String, required: true }
+  }), 'career_skills'),
+  tasks: mongoose.models.CareerTask || mongoose.model('CareerTask', createCareerSchema({
+    title: { type: String, required: true },
+    status: { type: String, required: true },
+    dueDate: { type: String, default: null },
+    notes: { type: String, default: '' }
+  }), 'career_tasks'),
+  journal: mongoose.models.CareerJournal || mongoose.model('CareerJournal', createCareerSchema({
+    date: { type: String, required: true },
+    entry: { type: String, required: true }
+  }), 'career_journal')
+};
 
 const Account = mongoose.models.Account || mongoose.model('Account', accountSchema, 'accounts');
 const Transaction = mongoose.models.Transaction || mongoose.model('Transaction', transactionSchema, 'transactions');
+const Budget = mongoose.models.Budget || mongoose.model('Budget', budgetSchema, 'budgets');
+const Reserve = mongoose.models.Reserve || mongoose.model('Reserve', reserveSchema, 'reserves');
+const DailyOverride = mongoose.models.DailyOverride || mongoose.model('DailyOverride', dailyOverrideSchema, 'daily_overrides');
 
-function serializeAccount(account, transactionList = []) {
-  const plain = account && typeof account.toObject === 'function' ? account.toObject() : { ...account };
-  const accountTransactions = (transactionList || []).filter((transaction) => transaction.accountId === plain._id);
+let connectionPromise = null;
+let connectionUri = null;
 
-  return {
-    ...plain,
-    balance: getAccountBalance(Number(plain.initialBalance || 0), accountTransactions)
-  };
-}
-
-function serializeTransaction(transaction) {
-  if (!transaction) {
-    return null;
-  }
-
-  const plain = transaction && typeof transaction.toObject === 'function' ? transaction.toObject() : { ...transaction };
-  return {
-    ...plain,
-    occurredAt: plain.occurredAt instanceof Date ? plain.occurredAt.toISOString() : plain.occurredAt,
-    createdAt: plain.createdAt instanceof Date ? plain.createdAt.toISOString() : plain.createdAt,
-    updatedAt: plain.updatedAt instanceof Date ? plain.updatedAt.toISOString() : plain.updatedAt
-  };
-}
-
-function buildAccountSummary(account) {
-  const balance = getAccountBalance(account.initialBalance, inMemoryStore.transactions.filter((transaction) => transaction.accountId === account._id));
-  return {
-    ...account,
-    balance
-  };
-}
-
-async function listMongoAccounts() {
-  const [accounts, transactions] = await Promise.all([
-    Account.find({}).lean().sort({ createdAt: 1 }).exec(),
-    Transaction.find({}).lean().exec()
-  ]);
-
-  return accounts.map((account) => serializeAccount(account, transactions));
-}
-
-async function listMongoTransactions(accountId) {
-  const query = accountId ? { accountId } : {};
-  const transactions = await Transaction.find(query).lean().sort({ occurredAt: 1, createdAt: 1 }).exec();
-  return transactions.map((transaction) => serializeTransaction(transaction));
-}
-
-async function createMongoAccount(payload) {
-  const account = await Account.create({
-    _id: randomUUID(),
-    name: payload.name,
-    type: payload.type,
-    initialBalance: Number(payload.initialBalance) || 0,
-    archived: Boolean(payload.archived),
-    createdAt: new Date(),
-    updatedAt: new Date()
-  });
-
-  const allTransactions = await Transaction.find({}).lean().exec();
-  return serializeAccount(account, allTransactions);
-}
-
-async function createMongoTransaction(payload) {
-  const record = await Transaction.create({
-    _id: randomUUID(),
-    accountId: payload.accountId,
-    type: payload.type,
-    amount: Number(payload.amount),
-    description: payload.description,
-    category: payload.category || null,
-    notes: payload.notes || '',
-    occurredAt: payload.occurredAt ? new Date(payload.occurredAt) : new Date(),
-    createdAt: new Date(),
-    updatedAt: new Date()
-  });
-
-  return serializeTransaction(record);
-}
-
-async function updateMongoTransaction(id, patch) {
-  const record = await Transaction.findById(id);
+function serializeRecord(record) {
   if (!record) {
     return null;
   }
 
-  if (patch.amount !== undefined) {
-    record.amount = Number(patch.amount);
+  const plain = typeof record.toObject === 'function' ? record.toObject() : { ...record };
+  for (const key of ['occurredAt', 'createdAt', 'updatedAt']) {
+    if (plain[key] instanceof Date) {
+      plain[key] = plain[key].toISOString();
+    }
   }
-  if (patch.description !== undefined) {
-    record.description = patch.description;
-  }
-  if (patch.category !== undefined) {
-    record.category = patch.category;
-  }
-  if (patch.notes !== undefined) {
-    record.notes = patch.notes;
-  }
-  if (patch.type !== undefined) {
-    record.type = patch.type;
-  }
-  if (patch.accountId !== undefined) {
-    record.accountId = patch.accountId;
-  }
-  if (patch.occurredAt !== undefined) {
-    record.occurredAt = new Date(patch.occurredAt);
-  }
-  record.updatedAt = new Date();
-
-  await record.save();
-  return serializeTransaction(record);
+  return plain;
 }
 
-async function deleteMongoTransaction(id) {
-  const record = await Transaction.findById(id);
-  if (!record) {
-    return null;
-  }
-
-  await record.deleteOne();
-  return { deleted: true, transaction: serializeTransaction(record) };
+function serializeAccount(account, transactions = []) {
+  const plain = serializeRecord(account);
+  const accountTransactions = transactions.filter((transaction) => transaction.accountId === plain._id);
+  return {
+    ...plain,
+    balance: getAccountBalance(plain.initialBalance, accountTransactions)
+  };
 }
 
-function createPersistenceStore({ mongoUri } = {}) {
-  const configuredMongoUri = mongoUri || process.env.MONGODB_URI;
-  const isMongoEnabled = Boolean(configuredMongoUri);
+function assertMongoReady() {
+  if (mongoose.connection.readyState !== 1) {
+    throw new Error('MongoDB is not connected.');
+  }
+}
 
-  const store = {
-    mode: isMongoEnabled ? 'mongo' : 'memory',
+function createMongoPersistenceStore(mongoUri) {
+  return {
+    mode: 'mongo',
     async connect() {
-      if (!isMongoEnabled) {
-        return false;
+      if (!mongoUri) {
+        throw new Error('MONGODB_URI is required.');
       }
-
-      const connectionState = mongoose.connection.readyState;
-      if (connectionState === 1) {
+      if (mongoose.connection.readyState === 1 && connectionUri === mongoUri) {
+        return true;
+      }
+      if (connectionPromise && connectionUri === mongoUri) {
+        await connectionPromise;
         return true;
       }
 
-      await mongoose.connect(configuredMongoUri);
+      connectionUri = mongoUri;
+      connectionPromise = mongoose.connect(mongoUri, { serverSelectionTimeoutMS: 10000 });
+      try {
+        await connectionPromise;
+      } finally {
+        connectionPromise = null;
+      }
       return true;
     },
     isReady() {
-      return isMongoEnabled ? mongoose.connection.readyState === 1 : true;
+      return Boolean(mongoUri) && mongoose.connection.readyState === 1;
+    },
+    async close() {
+      if (mongoose.connection.readyState !== 0) {
+        await mongoose.connection.close();
+      }
+      connectionUri = null;
+      connectionPromise = null;
     },
     async listAccounts() {
-      if (isMongoEnabled && mongoose.connection.readyState === 1) {
-        return listMongoAccounts();
+      assertMongoReady();
+      const [accounts, transactions] = await Promise.all([
+        Account.find({}).sort({ createdAt: 1 }).lean().exec(),
+        Transaction.find({}).lean().exec()
+      ]);
+      return accounts.map((account) => serializeAccount(account, transactions));
+    },
+    async getAccount(id) {
+      assertMongoReady();
+      const account = await Account.findById(id).lean().exec();
+      if (!account) {
+        return null;
       }
-      return inMemoryStore.accounts.map(buildAccountSummary);
+      const transactions = await Transaction.find({ accountId: id }).lean().exec();
+      return serializeAccount(account, transactions);
     },
     async createAccount(payload) {
-      if (isMongoEnabled && mongoose.connection.readyState === 1) {
-        return createMongoAccount(payload);
-      }
-
-      const account = {
+      assertMongoReady();
+      const record = await Account.create({
         _id: randomUUID(),
         name: payload.name,
         type: payload.type,
-        initialBalance: Number(payload.initialBalance) || 0,
-        archived: Boolean(payload.archived),
-        createdAt: new Date().toISOString()
-      };
-
-      inMemoryStore.accounts.push(account);
-      return buildAccountSummary(account);
+        initialBalance: payload.initialBalance,
+        archived: false
+      });
+      return serializeAccount(record);
+    },
+    async archiveAccount(id) {
+      assertMongoReady();
+      const record = await Account.findByIdAndUpdate(id, { archived: true }, { new: true, runValidators: true }).lean().exec();
+      return record ? serializeAccount(record, await Transaction.find({ accountId: id }).lean().exec()) : null;
     },
     async listTransactions(accountId) {
-      if (isMongoEnabled && mongoose.connection.readyState === 1) {
-        return listMongoTransactions(accountId);
-      }
-
-      let transactions = [...inMemoryStore.transactions];
-      if (accountId) {
-        transactions = transactions.filter((transaction) => transaction.accountId === accountId);
-      }
-      return transactions;
+      assertMongoReady();
+      const query = accountId ? { accountId } : {};
+      const records = await Transaction.find(query).sort({ occurredAt: 1, createdAt: 1 }).lean().exec();
+      return records.map(serializeRecord);
+    },
+    async getTransaction(id) {
+      assertMongoReady();
+      return serializeRecord(await Transaction.findById(id).lean().exec());
     },
     async createTransaction(payload) {
-      if (isMongoEnabled && mongoose.connection.readyState === 1) {
-        return createMongoTransaction(payload);
-      }
-
-      const transaction = {
-        _id: randomUUID(),
-        accountId: payload.accountId,
-        type: payload.type,
-        amount: Number(payload.amount),
-        description: payload.description,
-        category: payload.category || null,
-        notes: payload.notes || '',
-        occurredAt: payload.occurredAt || new Date().toISOString(),
-        createdAt: new Date().toISOString()
-      };
-
-      inMemoryStore.transactions.push(transaction);
-      return transaction;
+      assertMongoReady();
+      const record = await Transaction.create({ _id: randomUUID(), ...payload });
+      return serializeRecord(record);
     },
     async updateTransaction(id, patch) {
-      if (isMongoEnabled && mongoose.connection.readyState === 1) {
-        return updateMongoTransaction(id, patch);
-      }
-
-      const transaction = inMemoryStore.transactions.find((item) => item._id === id);
-      if (!transaction) {
-        return null;
-      }
-
-      const next = { ...transaction, ...patch };
-      if (patch.amount !== undefined) {
-        next.amount = Number(patch.amount);
-      }
-      if (patch.occurredAt !== undefined) {
-        next.occurredAt = patch.occurredAt;
-      }
-      const index = inMemoryStore.transactions.findIndex((item) => item._id === id);
-      inMemoryStore.transactions[index] = next;
-      return next;
+      assertMongoReady();
+      const record = await Transaction.findByIdAndUpdate(id, { ...patch, updatedAt: new Date() }, {
+        new: true,
+        runValidators: true
+      }).lean().exec();
+      return serializeRecord(record);
     },
     async deleteTransaction(id) {
-      if (isMongoEnabled && mongoose.connection.readyState === 1) {
-        return deleteMongoTransaction(id);
-      }
-
-      const index = inMemoryStore.transactions.findIndex((item) => item._id === id);
-      if (index === -1) {
-        return null;
-      }
-
-      const [removed] = inMemoryStore.transactions.splice(index, 1);
-      return { deleted: true, transaction: removed };
+      assertMongoReady();
+      const record = await Transaction.findByIdAndDelete(id).lean().exec();
+      return record ? { deleted: true, transaction: serializeRecord(record) } : null;
+    },
+    async listBudgets() {
+      assertMongoReady();
+      return (await Budget.find({}).sort({ month: 1 }).lean().exec()).map(serializeRecord);
+    },
+    async getBudget(month) {
+      assertMongoReady();
+      return serializeRecord(await Budget.findOne({ month }).lean().exec());
+    },
+    async upsertBudget(month, amount) {
+      assertMongoReady();
+      const existing = await Budget.findOne({ month }).lean().exec();
+      const record = await Budget.findOneAndUpdate({ month }, {
+        $set: { amount },
+        $setOnInsert: { _id: randomUUID(), month }
+      }, { new: true, upsert: true, runValidators: true }).lean().exec();
+      return { record: serializeRecord(record), created: !existing };
+    },
+    async listReserves() {
+      assertMongoReady();
+      return (await Reserve.find({}).sort({ createdAt: 1 }).lean().exec()).map(serializeRecord);
+    },
+    async createReserve(payload) {
+      assertMongoReady();
+      return serializeRecord(await Reserve.create({ _id: randomUUID(), ...payload }));
+    },
+    async listDailyOverrides() {
+      assertMongoReady();
+      return (await DailyOverride.find({}).sort({ date: 1 }).lean().exec()).map(serializeRecord);
+    },
+    async getDailyOverride(date) {
+      assertMongoReady();
+      return serializeRecord(await DailyOverride.findOne({ date }).lean().exec());
+    },
+    async upsertDailyOverride(payload) {
+      assertMongoReady();
+      return serializeRecord(await DailyOverride.findOneAndUpdate({ date: payload.date }, {
+        $set: { targetAmount: payload.targetAmount, reason: payload.reason },
+        $setOnInsert: { _id: randomUUID(), date: payload.date }
+      }, { new: true, upsert: true, runValidators: true }).lean().exec());
+    },
+    async getCareerProbation() {
+      assertMongoReady();
+      return serializeRecord(await careerModels.probation.findOne({}).lean().exec());
+    },
+    async saveCareerProbation(payload) {
+      assertMongoReady();
+      return serializeRecord(await careerModels.probation.findOneAndUpdate({}, {
+        $set: payload,
+        $setOnInsert: { _id: randomUUID() }
+      }, { new: true, upsert: true, runValidators: true }).lean().exec());
+    },
+    async listCareerEntries(type) {
+      assertMongoReady();
+      return (await careerModels[type].find({}).sort({ createdAt: 1 }).lean().exec()).map(serializeRecord);
+    },
+    async createCareerEntry(type, payload) {
+      assertMongoReady();
+      return serializeRecord(await careerModels[type].create({ _id: randomUUID(), ...payload }));
     }
   };
+}
 
-  return store;
+function createInMemoryPersistenceStore() {
+  const state = {
+    accounts: [],
+    transactions: [],
+    budgets: [],
+    reserves: [],
+    dailyOverrides: [],
+    career: { probation: null, checkpoints: [], skills: [], tasks: [], journal: [] }
+  };
+  const now = () => new Date().toISOString();
+
+  return {
+    mode: 'memory-test',
+    async connect() {
+      return true;
+    },
+    isReady() {
+      return true;
+    },
+    async close() {},
+    async listAccounts() {
+      return state.accounts.map((account) => serializeAccount(account, state.transactions));
+    },
+    async getAccount(id) {
+      const account = state.accounts.find((item) => item._id === id);
+      return account ? serializeAccount(account, state.transactions) : null;
+    },
+    async createAccount(payload) {
+      const account = {
+        _id: randomUUID(),
+        ...payload,
+        archived: false,
+        createdAt: now(),
+        updatedAt: now()
+      };
+      state.accounts.push(account);
+      return serializeAccount(account, state.transactions);
+    },
+    async archiveAccount(id) {
+      const account = state.accounts.find((item) => item._id === id);
+      if (!account) {
+        return null;
+      }
+      account.archived = true;
+      account.updatedAt = now();
+      return serializeAccount(account, state.transactions);
+    },
+    async listTransactions(accountId) {
+      return state.transactions
+        .filter((item) => !accountId || item.accountId === accountId)
+        .sort((a, b) => new Date(a.occurredAt) - new Date(b.occurredAt))
+        .map(serializeRecord);
+    },
+    async getTransaction(id) {
+      return serializeRecord(state.transactions.find((item) => item._id === id));
+    },
+    async createTransaction(payload) {
+      const record = { _id: randomUUID(), ...payload, createdAt: now(), updatedAt: now() };
+      state.transactions.push(record);
+      return serializeRecord(record);
+    },
+    async updateTransaction(id, patch) {
+      const record = state.transactions.find((item) => item._id === id);
+      if (!record) {
+        return null;
+      }
+      Object.assign(record, patch, { updatedAt: now() });
+      return serializeRecord(record);
+    },
+    async deleteTransaction(id) {
+      const index = state.transactions.findIndex((item) => item._id === id);
+      if (index < 0) {
+        return null;
+      }
+      const [record] = state.transactions.splice(index, 1);
+      return { deleted: true, transaction: serializeRecord(record) };
+    },
+    async listBudgets() {
+      return state.budgets.map(serializeRecord);
+    },
+    async getBudget(month) {
+      return serializeRecord(state.budgets.find((item) => item.month === month));
+    },
+    async upsertBudget(month, amount) {
+      let record = state.budgets.find((item) => item.month === month);
+      const created = !record;
+      if (!record) {
+        record = { _id: randomUUID(), month, createdAt: now() };
+        state.budgets.push(record);
+      }
+      record.amount = amount;
+      record.updatedAt = now();
+      return { record: serializeRecord(record), created };
+    },
+    async listReserves() {
+      return state.reserves.map(serializeRecord);
+    },
+    async createReserve(payload) {
+      const record = { _id: randomUUID(), ...payload, createdAt: now(), updatedAt: now() };
+      state.reserves.push(record);
+      return serializeRecord(record);
+    },
+    async listDailyOverrides() {
+      return state.dailyOverrides.map(serializeRecord);
+    },
+    async getDailyOverride(date) {
+      return serializeRecord(state.dailyOverrides.find((item) => item.date === date));
+    },
+    async upsertDailyOverride(payload) {
+      let record = state.dailyOverrides.find((item) => item.date === payload.date);
+      if (!record) {
+        record = { _id: randomUUID(), date: payload.date, createdAt: now() };
+        state.dailyOverrides.push(record);
+      }
+      Object.assign(record, payload, { updatedAt: now() });
+      return serializeRecord(record);
+    },
+    async getCareerProbation() {
+      return serializeRecord(state.career.probation);
+    },
+    async saveCareerProbation(payload) {
+      state.career.probation = {
+        _id: state.career.probation?._id || randomUUID(),
+        ...payload,
+        createdAt: state.career.probation?.createdAt || now(),
+        updatedAt: now()
+      };
+      return serializeRecord(state.career.probation);
+    },
+    async listCareerEntries(type) {
+      return state.career[type].map(serializeRecord);
+    },
+    async createCareerEntry(type, payload) {
+      const record = { _id: randomUUID(), ...payload, createdAt: now(), updatedAt: now() };
+      state.career[type].push(record);
+      return serializeRecord(record);
+    }
+  };
+}
+
+function createPersistenceStore(options = {}) {
+  const mongoUri = Object.hasOwn(options, 'mongoUri') ? options.mongoUri : process.env.MONGODB_URI;
+  return createMongoPersistenceStore(mongoUri);
 }
 
 module.exports = {
   createPersistenceStore,
-  resetInMemoryStore,
-  inMemoryStore,
-  mongoose
+  createInMemoryPersistenceStore,
+  mongoose,
+  models: { Account, Transaction, Budget, Reserve, DailyOverride, career: careerModels }
 };

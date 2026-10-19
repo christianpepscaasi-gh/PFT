@@ -379,6 +379,8 @@ Unless the existing API contract explicitly requires another representation, bac
 
 Do not silently switch between pesos and centavos.
 
+The existing API and frontend use PHP pesos at the public boundary: the UI accepts hundredths of a peso, sends the entered number unchanged, and formats returned values directly as PHP currency. Preserve that public representation for compatibility. Convert peso inputs to integer centavos before persistence and calculation, and convert centavos back to pesos in API responses. The legacy API also accepted more than two decimal places; because centavos cannot represent those values exactly, the migration must reject sub-centavo amounts instead of silently rounding them.
+
 Do not introduce MongoDB Decimal128 or another monetary representation unless the financial PRD is explicitly revised to approve it.
 
 ---
@@ -1550,6 +1552,8 @@ node --test
 
 Test failures must result in a non-zero exit code.
 
+The real MongoDB process-restart integration test uses `MONGODB_TEST_URI`, `MONGO_URI_TEST`, or `MONGODB_URI_TEST`. It starts the Express app in separate processes, uses a unique temporary test database, verifies API persistence and financial calculations after restart, and drops that database when the test finishes. Do not point these variables at a production database.
+
 Tests should cover at least:
 
 * account behavior
@@ -2014,21 +2018,21 @@ This assessment is based on the current repository state:
 
 | Check | Current state | Required before production GO |
 | --- | --- | --- |
-| Durable application storage | API routes still use the process-local `inMemoryStore`. | All application reads/writes use MongoDB and data survives process restart/redeployment. |
-| Serverless entrypoint | `server.js` starts its own listener with `app.listen()` when run directly; no Vercel-specific entrypoint/config is present. | Add and verify the Vercel-supported Express/Node handler and route mapping. Do not start a separate listener inside a serverless invocation. |
-| Static assets | Express serves files from `public/`. | Verify `index.html`, CSS, and browser JavaScript are included and resolve correctly on a Vercel preview deployment. |
-| Database lifecycle | Mongo connection occurs in `startServer()`; connection reuse and readiness behavior for serverless invocations are not yet implemented. | Reuse a cached Mongoose connection/promise safely across warm invocations; fail requests/readiness clearly when MongoDB is unavailable. |
+| Durable application storage | Normal API routes use the Mongo persistence store and do not fall back to process-local memory. A real-Mongo integration test now starts the app in two separate processes and verifies records, balances, planning data, overview, and reports survive the restart. The test uses an isolated, uniquely named database and drops it after the run. | Repeat persistence verification across a Vercel Preview redeploy. |
+| Serverless entrypoint | `server.js` exports the Express app; `app.listen()` is only called when the file is run directly. Vercel's zero-configuration Express support recognizes an exported app from `server.js`. | Verify the detected Express Function and API routing on a Vercel Preview deployment; do not invoke `startServer()` from the Function. |
+| Static assets | Browser assets are under `public/`. Vercel serves these as static assets; `express.static()` is retained for local Express use and is not Vercel's static-file delivery mechanism. | Verify `/`, `/styles.css`, and `/app.js` from a Vercel Preview deployment with correct content types. |
+| Database lifecycle | A dedicated Mongo test URI connected successfully. The real-Mongo process-restart test passed. Local `/health` reports liveness while disconnected, `/ready` connects and reports readiness, and a Mongo-backed accounts read succeeded. | Verify warm/cold invocation reuse, cold-start behavior, and readiness failures against the Vercel Preview database. |
 | Access control | No authentication or user ownership exists; finance APIs are unauthenticated. | Before exposing real data publicly, add approved authentication and ownership controls, or enforce an explicitly approved private-access boundary outside the app. Never assume an obscure URL protects financial records. |
-| Git integration | The current workspace does not have a Git repository initialized. | Initialize and push the repository to GitHub, or deliberately use another supported deployment method. |
-| Production verification | No deployed Vercel smoke-test evidence is recorded. | Complete all release checks below against a Vercel Preview deployment before promoting to Production. |
+| Deployment access | No Vercel CLI, Vercel token, local Vercel project link, or Preview URL is available in this environment. | Install/authenticate the Vercel CLI or link the Git repository to a Vercel project, then configure Preview environment variables. |
+| Production verification | No Vercel deployment or live smoke-test evidence is recorded. | Deploy a Development/QA Preview and complete all release checks below; this is not production approval. |
 
-The current app may be used only as a disposable demo with non-sensitive test data. The fact that MongoDB can be connected does not make the current API durable or private.
+The current app may be used only as a disposable demo with non-sensitive test data until Preview persistence, runtime behavior, and an approved private-access boundary have been verified. A successful Mongo connection does not make the unauthenticated API private.
 
 ## 63.2 Phase 1 Vercel Checklist
 
 Mark every item PASS with evidence before considering a Vercel deployment that stores durable records:
 
-- [ ] **Serverless-compatible app entry:** Express app is exported/handled using the currently supported Vercel Node.js/Express deployment pattern; no per-invocation `app.listen()` or reliance on a persistent process.
+- [ ] **Serverless-compatible app entry:** Vercel detects the Express app exported from `server.js`; `startServer()`/`app.listen()` are not invoked by serverless requests.
 - [ ] **Static file delivery:** `/`, `/styles.css`, and `/app.js` return successfully from a Vercel Preview deployment, with correct content types and no missing assets.
 - [ ] **Mongo persistence:** All in-scope records (accounts, transactions, budgets, reserves, daily overrides, and career data) are read/written through Mongoose repositories/models; no normal API route falls back to `inMemoryStore`.
 - [ ] **Connection reuse:** Repeated requests and warm invocations reuse a safe cached Mongo connection/promise; simultaneous cold starts and connection failures are handled without false success responses.

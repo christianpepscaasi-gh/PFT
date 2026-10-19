@@ -1,11 +1,10 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const request = require('supertest');
-const { createApp, resetInMemoryStore } = require('../server');
+const { createTestApp } = require('./app-helper');
 
 test('quick entry supports income and expense transactions with local date and time defaults', async () => {
-  resetInMemoryStore();
-  const app = createApp();
+  const app = createTestApp();
 
   const accountResponse = await request(app)
     .post('/api/accounts')
@@ -29,8 +28,7 @@ test('quick entry supports income and expense transactions with local date and t
 });
 
 test('account activity and timeline reflect only the selected account and maintain chronological order', async () => {
-  resetInMemoryStore();
-  const app = createApp();
+  const app = createTestApp();
 
   const walletA = await request(app)
     .post('/api/accounts')
