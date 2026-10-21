@@ -747,3 +747,8 @@ dialog form {
     transition-duration: 0.01ms !important;
   }
 }
+
+.error-message, #entry-error, [data-state="over-limit"] { color: #9f1239; background: #fff1f2; padding: 0.8rem; border-radius: 0.5rem; }
+[data-state="approaching-limit"] { color: #854d0e; background: #fef9c3; }
+[data-state="below-limit"] { color: #166534; background: #f0fdf4; }
+button:disabled { opacity: 0.6; cursor: wait; }

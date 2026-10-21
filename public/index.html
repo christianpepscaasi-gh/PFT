@@ -27,6 +27,7 @@
     </header>
 
     <main class="layout">
+      <div id="app-message" class="error-message" role="alert" tabindex="-1" hidden></div>
       <section id="overview-view" class="panel summary-panel view-panel active" data-view-panel="overview">
         <div class="section-heading overview-heading">
           <div>
@@ -205,6 +206,20 @@
         </div>
       </section>
 
+      <section class="panel" data-view-panel="planning" hidden>
+        <h2>Daily spending</h2>
+        <p class="helper-text">Targets are suggestions. Going over a target never blocks a transaction.</p>
+        <form id="override-form" class="career-form">
+          <div class="form-grid">
+            <label><span>Date</span><input id="override-date" type="date" required /></label>
+            <label><span>Target amount</span><input id="override-amount" type="number" min="0" step="0.01" required /></label>
+            <label><span>Reason (optional)</span><input id="override-reason" type="text" /></label>
+          </div>
+          <button type="submit" class="primary-button">Save date override</button>
+        </form>
+        <p id="daily-progress" class="summary-note" role="status">Daily spending unavailable.</p>
+      </section>
+
       <section id="career-view" class="panel view-panel" data-view-panel="career">
         <div class="section-heading">
           <div>
@@ -353,6 +368,7 @@
 
     <dialog id="quick-entry-modal">
       <form id="quick-entry-form" method="dialog">
+        <p id="entry-error" role="alert" hidden></p>
         <div class="modal-header">
           <div>
             <p class="eyebrow">Keep your records up to date</p>

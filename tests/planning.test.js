@@ -62,3 +62,20 @@ test('daily target uses the monthly budget as a suggestion, not a restriction', 
   assert.equal(response.body.kind, 'suggestion');
   assert.equal(response.body.amount > 0, true);
 });
+
+
+test('daily spending warnings change state without blocking transactions or changing balances', async () => {
+  const app = createTestApp();
+  const account = await request(app).post('/api/accounts').send({ name: 'Cash', type: 'Cash', initialBalance: 100 });
+  await request(app).post('/api/daily-limits/override').send({ date: '2026-10-07', targetAmount: 10 });
+  for (const [amount, state] of [[5, 'below-limit'], [3, 'approaching-limit'], [3, 'over-limit']]) {
+    const saved = await request(app).post('/api/transactions').send({ accountId: account.body._id, type: 'expense', amount, description: 'Spending', occurredAt: '2026-10-07T12:00:00+08:00' });
+    assert.equal(saved.status, 201);
+    const target = await request(app).get('/api/planning/daily-target?date=2026-10-07');
+    assert.equal(target.body.spendingState, state);
+  }
+  const target = await request(app).get('/api/planning/daily-target?date=2026-10-07');
+  assert.equal(target.body.spending, 11);
+  assert.equal(target.body.remaining, -1);
+  assert.equal((await request(app).get('/api/accounts')).body[0].balance, 89);
+});

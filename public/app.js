@@ -1,3 +1,86 @@
+async function checkedFetch(url, options) {
+  let response;
+  try { response = await fetch(url, options); }
+  catch { throw new Error('Unable to reach the server. Check your connection and try again.'); }
+  if (!response.ok) {
+    let message = 'The request could not be completed. Please try again.';
+    try { message = (await response.json()).error || message; } catch { /* Use a stable fallback. */ }
+    throw new Error(message);
+  }
+  return response;
+}
+
+function showError(error) {
+  const message = document.getElementById('app-message');
+  message.textContent = error.message || 'The request could not be completed.';
+  message.hidden = false;
+  const entryError = document.getElementById('entry-error');
+  entryError.textContent = message.textContent;
+  entryError.hidden = false;
+}
+
+async function runAction(control, handler) {
+  if (control.disabled) return;
+  control.disabled = true;
+  document.getElementById('app-message').hidden = true;
+  document.getElementById('entry-error').hidden = true;
+  try { await handler(); }
+  catch (error) { showError(error); }
+  finally { control.disabled = false; }
+}
+
+function registerSubmit(form, handler) {
+  form.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const button = form.querySelector('button[type="submit"]');
+    // Keep currentTarget available after awaits, when native events clear it.
+    return runAction(button, () => handler({ currentTarget: form, preventDefault() {} }));
+  });
+}
+
+function actionButton(label, handler) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'secondary-button';
+  button.textContent = label;
+  button.addEventListener('click', () => runAction(button, handler));
+  return button;
+}
+
+async function archiveAccount(account) {
+  if (!window.confirm('Archive ' + account.name + '? The account becomes inactive. Historical transactions remain preserved.')) return;
+  if (!window.confirm('Confirm that you want to archive this account.')) return;
+  await checkedFetch('/api/accounts/' + encodeURIComponent(account._id) + '/archive', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ confirm: true })
+  });
+  await loadAll();
+}
+
+function editTransaction(transaction) {
+  state.editingTransaction = transaction._id;
+  state.originalOccurredAt = transaction.occurredAt;
+  const accountSelect = document.getElementById('entry-account');
+  if (![...accountSelect.options].some((option) => option.value === transaction.accountId)) {
+    const option = document.createElement('option');
+    option.value = transaction.accountId;
+    option.textContent = 'Original archived account';
+    accountSelect.append(option);
+  }
+  for (const field of ['account', 'type', 'amount', 'category', 'description', 'notes']) {
+    document.getElementById('entry-' + field).value = transaction[field === 'account' ? 'accountId' : field] || '';
+  }
+  const local = getManilaDateTime(new Date(transaction.occurredAt));
+  document.getElementById('entry-date').value = local.date;
+  document.getElementById('entry-time').value = local.time;
+  document.getElementById('quick-entry-modal').showModal();
+}
+
+async function deleteTransaction(transaction) {
+  if (!window.confirm('Delete this transaction? Balances and reports will be recalculated.')) return;
+  await checkedFetch('/api/transactions/' + encodeURIComponent(transaction._id), { method: 'DELETE' });
+  await loadAll();
+}
+
 function getManilaDateTime(now = new Date()) {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit',
@@ -59,6 +142,7 @@ function renderAccounts(accounts) {
     amount.textContent = formatCurrency(balance);
 
     item.append(meta, amount);
+    if (!account.archived) item.append(actionButton('Archive', () => archiveAccount(account)));
     container.appendChild(item);
   });
 }
@@ -88,6 +172,7 @@ function renderTransactions(transactions, containerId = 'transaction-list') {
     value.className = `amount ${direction}`;
     value.textContent = `${transaction.type === 'income' ? '+' : '-'}${formatCurrency(amount)}`;
     item.append(description, details, value);
+    item.append(actionButton('Edit', () => editTransaction(transaction)), actionButton('Delete', () => deleteTransaction(transaction)));
 
     container.appendChild(item);
   });
@@ -103,7 +188,7 @@ function renderReports(report) {
 
 async function loadOverview() {
   const currentMonth = state.month || getManilaDateTime().date.slice(0, 7);
-  const response = await fetch(`/api/overview?month=${encodeURIComponent(currentMonth)}`);
+  const response = await checkedFetch(`/api/overview?month=${encodeURIComponent(currentMonth)}`);
   const data = await response.json();
 
   renderSummary(data);
@@ -128,7 +213,7 @@ async function loadOverview() {
 }
 
 async function loadTransactions() {
-  const response = await fetch('/api/transactions');
+  const response = await checkedFetch('/api/transactions');
   const data = await response.json();
   state.transactions = data;
   renderTransactions(data);
@@ -136,7 +221,7 @@ async function loadTransactions() {
 
 async function loadReports() {
   const month = state.month || getManilaDateTime().date.slice(0, 7);
-  const response = await fetch(`/api/reports/period?period=month&start=${encodeURIComponent(`${month}-01`)}`);
+  const response = await checkedFetch(`/api/reports/period?period=month&start=${encodeURIComponent(`${month}-01`)}`);
   const data = await response.json();
   renderReports(data);
 }
@@ -147,8 +232,8 @@ async function updatePlanningSummary() {
   const summary = document.getElementById('planning-summary');
 
   const [budgetResponse, dailyResponse] = await Promise.all([
-    fetch('/api/budgets').then((response) => response.json()),
-    fetch(`/api/planning/daily-target?date=${encodeURIComponent(date)}&month=${encodeURIComponent(month)}`)
+    checkedFetch('/api/budgets').then((response) => response.json()),
+    checkedFetch(`/api/planning/daily-target?date=${encodeURIComponent(date)}&month=${encodeURIComponent(month)}`)
       .then((response) => response.json())
   ]);
 
@@ -237,24 +322,24 @@ function renderCareerData(data) {
 
 async function loadCareerData() {
   const [probation, checkpoints, skills, tasks, journal] = await Promise.all([
-    fetch('/api/career/probation').then((response) => response.json()),
-    fetch('/api/career/checkpoints').then((response) => response.json()),
-    fetch('/api/career/skills').then((response) => response.json()),
-    fetch('/api/career/tasks').then((response) => response.json()),
-    fetch('/api/career/journal').then((response) => response.json())
+    checkedFetch('/api/career/probation').then((response) => response.json()),
+    checkedFetch('/api/career/checkpoints').then((response) => response.json()),
+    checkedFetch('/api/career/skills').then((response) => response.json()),
+    checkedFetch('/api/career/tasks').then((response) => response.json()),
+    checkedFetch('/api/career/journal').then((response) => response.json())
   ]);
 
   renderCareerData({ probation, checkpoints, skills, tasks, journal });
 }
 
 async function loadAll() {
-  const currentMonth = getManilaDateTime().date.slice(0, 7);
-  document.getElementById('budget-month').value = currentMonth;
+  document.getElementById('budget-month').value ||= state.month || getManilaDateTime().date.slice(0, 7);
   await loadOverview();
   await loadTransactions();
   await loadReports();
   await loadCareerData();
   await updatePlanningSummary();
+  await loadDailyProgress();
 }
 
 async function handleQuickEntry(event) {
@@ -271,13 +356,21 @@ async function handleQuickEntry(event) {
     occurredAt: `${document.getElementById('entry-date').value}T${document.getElementById('entry-time').value}:00+08:00`
   };
 
-  await fetch('/api/transactions', {
-    method: 'POST',
+  if (state.editingTransaction) {
+    const original = getManilaDateTime(new Date(state.originalOccurredAt));
+    if (document.getElementById('entry-date').value === original.date && document.getElementById('entry-time').value === original.time) {
+      payload.occurredAt = state.originalOccurredAt;
+    }
+  }
+
+  await checkedFetch(state.editingTransaction ? `/api/transactions/${encodeURIComponent(state.editingTransaction)}` : '/api/transactions', {
+    method: state.editingTransaction ? 'PATCH' : 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
   });
 
   form.reset();
+  state.editingTransaction = null;
   document.getElementById('quick-entry-modal').close();
   await loadAll();
 }
@@ -295,7 +388,7 @@ async function handleAccountCreate(event) {
     return;
   }
 
-  await fetch('/api/accounts', {
+  await checkedFetch('/api/accounts', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
@@ -321,14 +414,14 @@ function setDefaultCareerDates() {
   document.getElementById('task-date').value = today;
 }
 
-document.getElementById('budget-form').addEventListener('submit', async (event) => {
+registerSubmit(document.getElementById('budget-form'), async (event) => {
   event.preventDefault();
   const payload = {
     month: document.getElementById('budget-month').value,
     amount: Number(document.getElementById('budget-amount').value)
   };
 
-  await fetch('/api/budgets', {
+  await checkedFetch('/api/budgets', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
@@ -336,16 +429,17 @@ document.getElementById('budget-form').addEventListener('submit', async (event) 
 
   event.currentTarget.reset();
   await updatePlanningSummary();
+  await loadDailyProgress();
 });
 
-document.getElementById('reserve-form').addEventListener('submit', async (event) => {
+registerSubmit(document.getElementById('reserve-form'), async (event) => {
   event.preventDefault();
   const payload = {
     label: document.getElementById('reserve-label').value || 'Reserve',
     amount: Number(document.getElementById('reserve-amount').value)
   };
 
-  await fetch('/api/planning/reserves', {
+  await checkedFetch('/api/planning/reserves', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
@@ -355,7 +449,7 @@ document.getElementById('reserve-form').addEventListener('submit', async (event)
   await updatePlanningSummary();
 });
 
-document.getElementById('payday-form').addEventListener('submit', async (event) => {
+registerSubmit(document.getElementById('payday-form'), async (event) => {
   event.preventDefault();
   const date = document.getElementById('payday-date').value;
   const summary = document.getElementById('planning-summary');
@@ -365,11 +459,11 @@ document.getElementById('payday-form').addEventListener('submit', async (event) 
     return;
   }
 
-  const response = await fetch(`/api/planning/payday?nextExpectedPayday=${encodeURIComponent(date)}`);
+  const response = await checkedFetch(`/api/planning/payday?nextExpectedPayday=${encodeURIComponent(date)}`);
   const data = await response.json();
 
   if (data.status === 'unavailable') {
-    summary.textContent = 'Payday estimate is unavailable with the current inputs.';
+    summary.textContent = data.reason || 'Payday estimate is unavailable with the current inputs.';
     return;
   }
 
@@ -377,17 +471,20 @@ document.getElementById('payday-form').addEventListener('submit', async (event) 
 });
 
 document.getElementById('quick-entry-button').addEventListener('click', () => {
+  state.editingTransaction = null;
+  document.getElementById('quick-entry-form').reset();
+  setDefaultEntryDateTime();
   document.getElementById('quick-entry-modal').showModal();
 });
 
-document.getElementById('probation-form').addEventListener('submit', async (event) => {
+registerSubmit(document.getElementById('probation-form'), async (event) => {
   event.preventDefault();
   const payload = {
     startDate: document.getElementById('probation-start').value,
     endDate: document.getElementById('probation-end').value
   };
 
-  await fetch('/api/career/probation', {
+  await checkedFetch('/api/career/probation', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
@@ -396,7 +493,7 @@ document.getElementById('probation-form').addEventListener('submit', async (even
   await loadCareerData();
 });
 
-document.getElementById('checkpoint-form').addEventListener('submit', async (event) => {
+registerSubmit(document.getElementById('checkpoint-form'), async (event) => {
   event.preventDefault();
   const payload = {
     date: document.getElementById('checkpoint-date').value,
@@ -405,7 +502,7 @@ document.getElementById('checkpoint-form').addEventListener('submit', async (eve
     status: document.getElementById('checkpoint-status').value
   };
 
-  await fetch('/api/career/checkpoints', {
+  await checkedFetch('/api/career/checkpoints', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
@@ -415,14 +512,14 @@ document.getElementById('checkpoint-form').addEventListener('submit', async (eve
   await loadCareerData();
 });
 
-document.getElementById('skill-form').addEventListener('submit', async (event) => {
+registerSubmit(document.getElementById('skill-form'), async (event) => {
   event.preventDefault();
   const payload = {
     name: document.getElementById('skill-name').value.trim(),
     status: document.getElementById('skill-status').value
   };
 
-  await fetch('/api/career/skills', {
+  await checkedFetch('/api/career/skills', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
@@ -432,7 +529,7 @@ document.getElementById('skill-form').addEventListener('submit', async (event) =
   await loadCareerData();
 });
 
-document.getElementById('task-form').addEventListener('submit', async (event) => {
+registerSubmit(document.getElementById('task-form'), async (event) => {
   event.preventDefault();
   const payload = {
     title: document.getElementById('task-title').value.trim(),
@@ -441,7 +538,7 @@ document.getElementById('task-form').addEventListener('submit', async (event) =>
     notes: document.getElementById('task-notes').value
   };
 
-  await fetch('/api/career/tasks', {
+  await checkedFetch('/api/career/tasks', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
@@ -451,14 +548,14 @@ document.getElementById('task-form').addEventListener('submit', async (event) =>
   await loadCareerData();
 });
 
-document.getElementById('journal-form').addEventListener('submit', async (event) => {
+registerSubmit(document.getElementById('journal-form'), async (event) => {
   event.preventDefault();
   const payload = {
     date: document.getElementById('journal-date').value,
     entry: document.getElementById('journal-entry').value.trim()
   };
 
-  await fetch('/api/career/journal', {
+  await checkedFetch('/api/career/journal', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
@@ -481,7 +578,7 @@ document.getElementById('account-cancel-button').addEventListener('click', () =>
   document.getElementById('account-form').classList.add('hidden');
 });
 
-document.getElementById('account-form').addEventListener('submit', handleAccountCreate);
+registerSubmit(document.getElementById('account-form'), handleAccountCreate);
 
 document.querySelectorAll('.tab-button').forEach((button) => {
   button.addEventListener('click', () => {
@@ -508,17 +605,45 @@ document.querySelectorAll('[data-close-modal]').forEach((element) => {
   });
 });
 
-document.getElementById('quick-entry-form').addEventListener('submit', handleQuickEntry);
+registerSubmit(document.getElementById('quick-entry-form'), handleQuickEntry);
 document.getElementById('salary-month').addEventListener('change', async (event) => {
-  state.month = event.target.value;
-  await loadOverview();
-  await loadTransactions();
-  await loadReports();
-  await updatePlanningSummary();
+  try {
+    state.month = event.target.value;
+    await loadOverview();
+    await loadTransactions();
+    await loadReports();
+    await updatePlanningSummary();
+  } catch (error) { showError(error); }
 });
 
 setDefaultEntryDateTime();
 setDefaultCareerDates();
 window.addEventListener('DOMContentLoaded', () => {
-  loadAll();
+  loadAll().catch(showError);
 });
+
+async function loadDailyProgress() {
+  const input = document.getElementById('override-date');
+  input.value ||= getManilaDateTime().date;
+  const response = await checkedFetch('/api/planning/daily-target?date=' + encodeURIComponent(input.value));
+  const data = await response.json();
+  const progress = document.getElementById('daily-progress');
+  progress.dataset.state = data.spendingState;
+  progress.textContent = data.amount == null
+    ? 'Spending: ' + formatCurrency(data.spending) + '; target unavailable. Set a monthly budget or date override.'
+    : 'Spending: ' + formatCurrency(data.spending) + '; suggested target: ' + formatCurrency(data.amount)
+      + '; ' + (data.remaining < 0 ? 'exceeded by ' + formatCurrency(-data.remaining) : 'remaining ' + formatCurrency(data.remaining))
+      + '; ' + data.spendingState.replaceAll('-', ' ') + '.';
+}
+
+registerSubmit(document.getElementById('override-form'), async () => {
+  await checkedFetch('/api/daily-limits/override', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ date: document.getElementById('override-date').value,
+      targetAmount: Number(document.getElementById('override-amount').value),
+      reason: document.getElementById('override-reason').value })
+  });
+  await loadDailyProgress();
+  await updatePlanningSummary();
+});
+document.getElementById('override-date').addEventListener('change', () => loadDailyProgress().catch(showError));

@@ -641,9 +641,20 @@ function createApp({ persistenceStore } = {}) {
     const budget = await store.getBudget(targetMonth);
     const result = getDailyTargetForDate(budget, targetDate, targetMonth);
     const override = await store.getDailyOverride(targetDate);
+    const spending = (await store.listTransactions())
+      .filter((transaction) => transaction.type === 'expense' && getDateKeyForTransaction(transaction.occurredAt) === targetDate)
+      .reduce((total, transaction) => total + transaction.amount, 0);
+    const amount = override ? override.targetAmount : result.amount;
+    const progress = {
+      spending: toPesos(spending),
+      remaining: amount == null ? null : toPesos(amount - spending),
+      spendingState: amount == null ? 'unavailable' : spending > amount ? 'over-limit'
+        : spending >= amount * 0.8 ? 'approaching-limit' : 'below-limit'
+    };
     if (override) {
       return res.json(serializeDailyTarget({
         ...result,
+        ...progress,
         kind: 'suggestion',
         override: {
           date: override.date,
@@ -656,7 +667,7 @@ function createApp({ persistenceStore } = {}) {
         month: targetMonth
       }));
     }
-    return res.json(serializeDailyTarget(result));
+    return res.json(serializeDailyTarget({ ...result, ...progress }));
   }));
 
   app.use((error, req, res, next) => {
