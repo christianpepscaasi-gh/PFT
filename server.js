@@ -10,6 +10,15 @@ function asyncRoute(handler) {
   return (req, res, next) => Promise.resolve(handler(req, res, next)).catch(next);
 }
 
+function logFailure(operation, error) {
+  // Stack frames locate failures without logging request bodies or database URLs.
+  console.error(`${operation}: ${error.name || 'Error'}`);
+  if (process.env.NODE_ENV !== 'production' && error.stack) {
+    console.error(error.stack.split('\n').filter((line) => /^\s+at\s/.test(line))
+      .map((line) => line.replace(/mongodb(?:\+srv)?:\/\/\S+/gi, '[redacted database URI]')).join('\n'));
+  }
+}
+
 function parseMoneyInCentavos(value) {
   if ((typeof value !== 'number' && typeof value !== 'string') || !Number.isFinite(Number(value))) {
     return null;
@@ -684,10 +693,10 @@ function createApp({ persistenceStore } = {}) {
       return res.status(409).json({ error: 'A record with those values already exists.' });
     }
     if (!store.isReady()) {
-      console.error('Request failed because the database is unavailable.');
+      logFailure(`${req.method} ${req.route?.path || '/api'} database unavailable`, error);
       return res.status(503).json({ error: 'Database is unavailable.' });
     }
-    console.error('Request failed:', error.name || 'Error');
+    logFailure(`${req.method} ${req.route?.path || '/api'} request failed`, error);
     return res.status(500).json({ error: 'The request could not be completed.' });
   });
 
@@ -697,6 +706,7 @@ function createApp({ persistenceStore } = {}) {
 async function startServer() {
   const mongoUri = process.env.MONGODB_URI;
   if (!mongoUri) {
+    console.error('Database startup failed: configure MONGODB_URI in the server environment.');
     throw new Error('MONGODB_URI must be configured before starting the application.');
   }
 
@@ -706,6 +716,7 @@ async function startServer() {
     await persistenceStore.connect();
   } catch (error) {
     console.error('MongoDB connection failed. Verify MONGODB_URI and database network access.');
+    logFailure('Database startup failed', error);
     throw error;
   }
 
