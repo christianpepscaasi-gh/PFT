@@ -3,7 +3,8 @@ const assert = require('node:assert/strict');
 const request = require('supertest');
 const { createTestApp } = require('./app-helper');
 
-test('career probation config calculates elapsed and remaining days without affecting finances', async () => {
+test('career probation config calculates elapsed and remaining days without affecting finances', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-10-14T04:00:00Z') });
   const app = createTestApp();
 
   const response = await request(app)
@@ -67,4 +68,18 @@ test('career checkpoint and skill records store user-entered values', async () =
 
   assert.equal(journalResponse.status, 201);
   assert.equal(journalResponse.body.entry.includes('roadmap'), true);
+});
+
+
+test('probation counts refresh on read and invalid Career inputs are rejected', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-10-01T04:00:00Z') });
+  const app = createTestApp();
+  await request(app).post('/api/career/probation').send({ startDate: '2026-10-01', endDate: '2026-10-10' });
+  t.mock.timers.setTime(new Date('2026-10-04T04:00:00Z').getTime());
+  const result = await request(app).get('/api/career/probation');
+  assert.equal(result.body.elapsedDays, 3);
+  assert.equal(result.body.remainingDays, 6);
+  assert.equal((await request(app).post('/api/career/probation').send({ startDate: '2026-10-10', endDate: '2026-10-01' })).status, 400);
+  assert.equal((await request(app).post('/api/career/skills').send({ name: 'Skill', status: 'invented' })).status, 400);
+  assert.equal((await request(app).post('/api/career/tasks').send({ title: 'Task', status: 'todo', dueDate: '2026-02-30' })).status, 400);
 });

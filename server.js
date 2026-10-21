@@ -195,6 +195,18 @@ function getPaydayRecommendation({ nextExpectedPayday, reserves = 0, accountsTot
   };
 }
 
+function serializeProbation(record) {
+  if (!record) return { status: 'not-configured' };
+  const today = parsePhilippineDate(getPhilippineDateKey(new Date())).getTime();
+  const start = parsePhilippineDate(record.startDate).getTime();
+  const end = parsePhilippineDate(record.endDate).getTime();
+  return {
+    ...record,
+    elapsedDays: Math.max(0, Math.min((end - start) / 86400000, (today - start) / 86400000)),
+    remainingDays: Math.max(0, (end - Math.max(start, today)) / 86400000)
+  };
+}
+
 function createApp({ persistenceStore } = {}) {
   const store = persistenceStore || createPersistenceStore({ mongoUri: process.env.MONGODB_URI });
   const app = express();
@@ -451,6 +463,9 @@ function createApp({ persistenceStore } = {}) {
     if (!isDateKey(startDate) || !isDateKey(endDate)) {
       return res.status(400).json({ error: 'Probation start and end dates must be valid ISO dates.' });
     }
+    if (startDate > endDate) {
+      return res.status(400).json({ error: 'Probation end must not be before start.' });
+    }
     const start = new Date(`${startDate}T00:00:00+08:00`);
     const end = new Date(`${endDate}T00:00:00+08:00`);
     const now = new Date();
@@ -461,11 +476,11 @@ function createApp({ persistenceStore } = {}) {
       remainingDays: Math.max(0, Math.floor((end.getTime() - now.getTime()) / 86400000)),
       updatedAt: new Date().toISOString()
     });
-    return res.status(201).json(probation);
+    return res.status(201).json(serializeProbation(probation));
   }));
 
   app.get('/api/career/probation', asyncRoute(async (req, res) => {
-    res.json(await store.getCareerProbation() || { status: 'not-configured' });
+    res.json(serializeProbation(await store.getCareerProbation()));
   }));
 
   const careerRoutes = [
@@ -502,6 +517,17 @@ function createApp({ persistenceStore } = {}) {
       }
       if (['checkpoints', 'journal'].includes(route.path) && !isDateKey(req.body.date)) {
         return res.status(400).json({ error: 'Date must be a valid ISO date.' });
+      }
+      const statuses = {
+        checkpoints: ['upcoming', 'completed', 'passed', 'needs improvement', 'unknown'],
+        skills: ['not started', 'learning', 'practicing', 'comfortable', 'mastered'],
+        tasks: ['todo', 'in-progress', 'completed']
+      };
+      if (statuses[route.path] && !statuses[route.path].includes(req.body.status)) {
+        return res.status(400).json({ error: 'Career status is invalid.' });
+      }
+      if (route.path === 'tasks' && req.body.dueDate && !isDateKey(req.body.dueDate)) {
+        return res.status(400).json({ error: 'Task date must be a valid ISO date.' });
       }
       const record = await store.createCareerEntry(route.path, route.fields(req.body));
       return res.status(201).json(record);
