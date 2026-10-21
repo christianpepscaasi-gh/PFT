@@ -217,7 +217,7 @@ MongoDB should become the durable source of application records without changing
 
 ---
 
-# 3. Current Application Baseline
+# 3. Original Application Baseline
 
 The current application includes:
 
@@ -232,7 +232,7 @@ The current application includes:
 
 The current server behavior includes a MongoDB connection path, but successful MongoDB connection does not by itself mean that existing API handlers are using MongoDB.
 
-The current API handlers still rely on the process-local `inMemoryStore`.
+At the original planning baseline, API handlers relied on the process-local `inMemoryStore`. The current implementation uses MongoDB for all normal resource operations; the memory adapter is explicitly injected by tests. Live restart persistence must still be verified against a reachable dedicated test database.
 
 Therefore:
 

@@ -2,7 +2,7 @@
 
 Pocket Ledger is a personal finance tracker for recording income and expenses, reviewing account balances, and keeping budgets and spending plans separate from actual money. It also includes an optional career-progress area for probation dates, checkpoints, skills, tasks, and learning notes.
 
-> **Prototype status:** This repository is suitable for development and a hosted demo, but it is not ready for real financial data. API data is currently held in memory and is lost when the server stops. Setting `MONGODB_URI` only connects Mongoose; the current routes still use the in-memory store. Complete the MongoDB persistence work described in [FUTURE_INTEGRATION.md](FUTURE_INTEGRATION.md) before using this with real financial records.
+> **Development status:** Normal application operations use MongoDB for all resource types. MongoDB is required; startup does not fall back to memory. Authentication is not implemented. Production readiness still requires successful persistence tests and the protected deployment checks in [FUTURE_INTEGRATION.md](FUTURE_INTEGRATION.md#63-vercel-deployment-readiness-gate).
 
 ## Features
 
@@ -29,7 +29,7 @@ npm run dev
 
 Open <http://localhost:3000>.
 
-The server starts in in-memory mode when `MONGODB_URI` is not set. Data is reset when the process restarts. When `MONGODB_URI` is set, the server now connects to MongoDB and exposes a readiness check at `/ready`. Account and transaction routes are backed by the database when the connection is active, while the rest of the prototype remains intentionally in-memory until the broader migration work is completed.
+Configure `MONGODB_URI` in your local `.env` before starting. Accounts, transactions, budgets, reserves, daily overrides, and Career records use MongoDB. `/health` reports process liveness; `/ready` checks database readiness. A failed initial connection prevents normal startup.
 
 To run without Nodemon:
 
@@ -39,12 +39,12 @@ node server.js
 
 ## Configuration
 
-Create a local `.env` file if needed. `.env` is excluded from Git; never commit database credentials or other secrets.
+Copy `.env.example` to a local `.env` and configure your database. `.env` is excluded from Git; never commit database credentials or other secrets.
 
 | Variable | Required now | Description |
 | --- | --- | --- |
 | `PORT` | No | HTTP port; defaults to `3000`. |
-| `MONGODB_URI` | No for the current in-memory prototype | Mongoose connection string. The current API does not persist its records to MongoDB yet. |
+| `MONGODB_URI` | Yes | Backend-only MongoDB connection string. |
 
 Example local configuration:
 
@@ -64,6 +64,12 @@ npm run validate
 ```
 
 `npm run validate` runs ESLint and the automated test suite.
+
+The restart persistence test reads `MONGODB_URI_TEST` first (aliases: `MONGODB_TEST_URI`, `MONGO_URI_TEST`). An explicit database name must contain `test`; a connection URI without a database name is also supported. It creates and drops a uniquely named `pft_test_*` database using that test connection; never supply production credentials. `MONGODB_URI` is for normal application operation and is not the restart test target. Without a test URI, this test is skipped and Mongo persistence is unverified.
+
+Financial calendar dates use `Asia/Manila`. Offset-free transaction timestamps are interpreted as Philippine wall-clock time; explicit offsets remain authoritative. Current balances include records through today?s Philippine date, while historical reports calculate balances through their selected end date. Weekly reports default to Monday?Sunday; custom report endpoints are inclusive. Monthly reports accept full `YYYY-MM-DD` start/end dates and derive omitted boundaries from that month.
+
+Report date rules: weekly `start` or `end` selects its containing Monday-Sunday week. If both dates are supplied, they must be ordered and belong to the same week; otherwise the API returns 400. Use custom mode for exact inclusive endpoints or multiple weeks. Actual-income summaries exclude future-dated income with category `Salary` until its Philippine calendar date begins, including when a future report period is requested. The source transaction remains in history. Same-day salary follows the existing calendar-day convention, rather than a time-of-day cutoff. Other transaction types and report balances as of an explicitly selected end date retain their existing behavior.
 
 ## Publish to GitHub
 

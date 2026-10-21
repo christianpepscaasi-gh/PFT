@@ -113,9 +113,9 @@ test('planning values preserve peso responses while calculations use centavos', 
   assert.equal(dailyTarget.body.override.targetAmount, 2.05);
 });
 
-const mongoTestUri = process.env.MONGODB_TEST_URI
-  || process.env.MONGO_URI_TEST
-  || process.env.MONGODB_URI_TEST;
+const mongoTestUri = process.env.MONGODB_URI_TEST
+  || process.env.MONGODB_TEST_URI
+  || process.env.MONGO_URI_TEST;
 
 function runMongoAppProcess(phase, uri, snapshot) {
   const result = spawnSync(process.execPath, [
