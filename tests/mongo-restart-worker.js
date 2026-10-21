@@ -49,6 +49,16 @@ async function main() {
         category: 'Salary',
         occurredAt: '2026-10-19T13:00:00+08:00'
       });
+      const futureSalaryDate = getPhilippineDateKey(new Date(Date.now() + 7 * 86400000));
+      const futureSalary = await api('/api/transactions', 'POST', {
+        accountId: account._id,
+        type: 'income',
+        amount: 999.99,
+        description: 'Future salary restart regression',
+        category: 'Salary',
+        occurredAt: `${futureSalaryDate}T00:00:00+08:00`
+      });
+      assert.equal((await store.getTransaction(futureSalary._id)).amount, 99999);
       const budget = await api('/api/budgets', 'POST', { month: '2026-10', amount: 2000.05 });
       const reserve = await api('/api/planning/reserves', 'POST', { label: 'Restart test reserve', amount: 15.25 });
       const override = await api('/api/daily-limits/override', 'POST', {
@@ -67,7 +77,9 @@ async function main() {
       const created = {
         accountId: account._id,
         expenseId: expense._id,
-        incomeId: income._id
+        incomeId: income._id,
+        futureSalaryId: futureSalary._id,
+        futureSalaryDate
       };
       await verifyPersistedData(api, created);
       process.stdout.write(`${JSON.stringify(created)}\n`);
@@ -98,10 +110,11 @@ async function verifyPersistedData(api, snapshot) {
   const transactions = await api(`/api/transactions?accountId=${encodeURIComponent(snapshot.accountId)}`);
   assert.deepEqual(
     transactions.map((transaction) => transaction._id).sort(),
-    [snapshot.expenseId, snapshot.incomeId].sort()
+    [snapshot.expenseId, snapshot.incomeId, snapshot.futureSalaryId].sort()
   );
   assert.equal(transactions.find((transaction) => transaction._id === snapshot.expenseId).amount, 12.34);
   assert.equal(transactions.find((transaction) => transaction._id === snapshot.incomeId).amount, 25.10);
+  assert.equal(transactions.find((transaction) => transaction._id === snapshot.futureSalaryId).amount, 999.99);
 
   const budgets = await api('/api/budgets');
   assert.equal(budgets.find((budget) => budget.month === '2026-10')?.amount, 2000.05);
@@ -119,6 +132,20 @@ async function verifyPersistedData(api, snapshot) {
   assert.equal(overview.monthlyIncome, 25.10);
   assert.equal(overview.monthlyExpenses, 12.34);
   assert.equal(overview.netCashFlow, 12.76);
+
+  const allTime = await api('/api/reports/overview');
+  assert.equal(allTime.income, 25.10);
+  const salary = await api(`/api/reports/salary?month=${snapshot.futureSalaryDate.slice(0, 7)}`);
+  assert.equal(salary.totalIncome, snapshot.futureSalaryDate.startsWith('2026-10') ? 25.10 : 0);
+  assert.ok(salary.transactions.every((transaction) => transaction._id !== snapshot.futureSalaryId));
+  const futurePeriod = await api(`/api/reports/period?period=custom&start=${snapshot.futureSalaryDate}&end=${snapshot.futureSalaryDate}`);
+  assert.equal(futurePeriod.income, 0);
+  assert.equal(futurePeriod.count, 0);
+  const week = await api('/api/reports/period?period=week&start=2026-10-21');
+  assert.equal(week.start, '2026-10-19');
+  assert.equal(week.end, '2026-10-25');
+  assert.equal(week.income, 25.10);
+  assert.equal(week.expenses, 12.34);
 
   const report = await api('/api/reports/period?period=custom&start=2026-10-19&end=2026-10-19');
   assert.equal(report.income, 25.10);

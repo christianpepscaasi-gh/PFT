@@ -106,8 +106,7 @@ function normalizePeriodRange(period, start, end) {
     return { start: currentKey, end: currentKey };
   }
   if (period === 'week') {
-    const week = getWeekWindow(parsePhilippineDate(start || end || currentKey));
-    return { start: start || week.start, end: end || week.end };
+    return getWeekWindow(parsePhilippineDate(start || end || currentKey));
   }
   if (period === 'month') {
     const monthPrefix = (start || end || currentKey).slice(0, 7);
@@ -122,6 +121,16 @@ function filterTransactionsByRange(transactions, start, end) {
   return transactions.filter((transaction) => {
     const dateKey = getDateKeyForTransaction(transaction.occurredAt);
     return dateKey >= start && dateKey <= end;
+  });
+}
+
+function excludeFutureSalary(transactions) {
+  // Match the existing balance convention: effectiveness follows Manila calendar dates.
+  // Retain source records and leave other transaction types' reporting policy unchanged.
+  const today = getPhilippineDateKey(new Date());
+  return transactions.filter((transaction) => {
+    return transaction.type !== 'income' || transaction.category !== 'Salary'
+      || getDateKeyForTransaction(transaction.occurredAt) <= today;
   });
 }
 
@@ -362,7 +371,7 @@ function createApp({ persistenceStore } = {}) {
 
   app.get('/api/reports/overview', asyncRoute(async (req, res) => {
     const accounts = (await store.listAccounts()).filter((account) => !account.archived);
-    const transactions = await store.listTransactions();
+    const transactions = excludeFutureSalary(await store.listTransactions());
     const income = transactions
       .filter((transaction) => transaction.type === 'income')
       .reduce((total, transaction) => total + Number(transaction.amount || 0), 0);
@@ -384,7 +393,7 @@ function createApp({ persistenceStore } = {}) {
       return res.status(400).json({ error: 'Month must use YYYY-MM format.' });
     }
     const accounts = (await store.listAccounts()).filter((account) => !account.archived);
-    const monthlyTransactions = (await store.listTransactions()).filter((transaction) => {
+    const monthlyTransactions = excludeFutureSalary(await store.listTransactions()).filter((transaction) => {
       return getDateKeyForTransaction(transaction.occurredAt).startsWith(month);
     });
     const monthlyIncome = monthlyTransactions
@@ -417,12 +426,22 @@ function createApp({ persistenceStore } = {}) {
     if ((start && !isDateKey(start)) || (end && !isDateKey(end))) {
       return res.status(400).json({ error: 'Report dates must be valid ISO dates.' });
     }
+    if (period === 'week' && start && end) {
+      if (start > end) {
+        return res.status(400).json({ error: 'Report start must not be after end.' });
+      }
+      const startWeek = getWeekWindow(parsePhilippineDate(start));
+      const endWeek = getWeekWindow(parsePhilippineDate(end));
+      if (startWeek.start !== endWeek.start) {
+        return res.status(400).json({ error: 'Weekly report dates must belong to the same Monday-Sunday week. Use custom mode for multiple weeks.' });
+      }
+    }
     const range = normalizePeriodRange(period, start, end);
     if (range.start > range.end) {
       return res.status(400).json({ error: 'Report start must not be after end.' });
     }
     const transactions = await store.listTransactions();
-    const relevantTransactions = filterTransactionsByRange(transactions, range.start, range.end);
+    const relevantTransactions = filterTransactionsByRange(excludeFutureSalary(transactions), range.start, range.end);
     const income = relevantTransactions
       .filter((transaction) => transaction.type === 'income')
       .reduce((total, transaction) => total + Number(transaction.amount || 0), 0);
@@ -452,7 +471,7 @@ function createApp({ persistenceStore } = {}) {
       return res.status(400).json({ error: 'Month must use YYYY-MM format.' });
     }
     const monthPrefix = month || getPhilippineDateKey(new Date()).slice(0, 7);
-    const monthTransactions = (await store.listTransactions()).filter((transaction) => {
+    const monthTransactions = excludeFutureSalary(await store.listTransactions()).filter((transaction) => {
       return transaction.type === 'income'
         && transaction.category === 'Salary'
         && getDateKeyForTransaction(transaction.occurredAt).startsWith(monthPrefix);
