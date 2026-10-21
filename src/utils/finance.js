@@ -27,6 +27,23 @@ function getPhilippineDateKey(date) {
   return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 }
 
+// Offset-free transaction timestamps are Philippine wall-clock times.
+function parsePhilippineDate(value) {
+  if (value instanceof Date) return new Date(value);
+  if (typeof value !== 'string') return new Date(NaN);
+  const normalized = value.trim();
+  const calendarDate = /^(\d{4}-\d{2}-\d{2})(?:$|T|\s)/.exec(normalized);
+  if (!calendarDate) return new Date(NaN);
+  const calendarCheck = new Date(`${calendarDate[1]}T00:00:00Z`);
+  if (Number.isNaN(calendarCheck.getTime()) || calendarCheck.toISOString().slice(0, 10) !== calendarDate[1]) {
+    return new Date(NaN);
+  }
+  const dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(normalized);
+  const hasOffset = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(normalized);
+  return new Date(dateOnly ? `${normalized}T00:00:00+08:00`
+    : hasOffset ? normalized : `${normalized}+08:00`);
+}
+
 function getWeekWindow(date) {
   const { year, month, day } = getManilaDateParts(date);
   const seed = new Date(Date.UTC(year, month - 1, day, 12));
@@ -42,8 +59,9 @@ function getWeekWindow(date) {
   };
 }
 
-function getAccountBalance(initialBalance, transactions = []) {
+function getAccountBalance(initialBalance, transactions = [], asOfDate = null) {
   return transactions.reduce((total, transaction) => {
+    if (asOfDate && getPhilippineDateKey(parsePhilippineDate(transaction.occurredAt)) > asOfDate) return total;
     const amount = Number(transaction.amount) || 0;
     if (transaction.type === 'income') {
       return total + amount;
@@ -88,6 +106,7 @@ function getSalaryRecommendation({ availableBalance, reserves = 0, nextExpectedP
 }
 
 module.exports = {
+  parsePhilippineDate,
   getPhilippineDateKey,
   getWeekWindow,
   getAccountBalance,

@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
 const { randomUUID } = require('node:crypto');
-const { getAccountBalance } = require('./utils/finance');
+const { getAccountBalance, getPhilippineDateKey } = require('./utils/finance');
 
 const moneyField = {
   type: Number,
@@ -128,7 +128,7 @@ function serializeAccount(account, transactions = []) {
   const accountTransactions = transactions.filter((transaction) => transaction.accountId === plain._id);
   return {
     ...plain,
-    balance: getAccountBalance(plain.initialBalance, accountTransactions)
+    balance: getAccountBalance(plain.initialBalance, accountTransactions, getPhilippineDateKey(new Date()))
   };
 }
 

@@ -1,3 +1,12 @@
+function getManilaDateTime(now = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23'
+  }).formatToParts(now);
+  const values = Object.fromEntries(parts.map(({ type, value }) => [type, value]));
+  return { date: `${values.year}-${values.month}-${values.day}`, time: `${values.hour}:${values.minute}` };
+}
+
 const currencyFormatter = new Intl.NumberFormat('en-PH', {
   style: 'currency',
   currency: 'PHP'
@@ -18,7 +27,7 @@ function renderSummary(data) {
   document.getElementById('monthly-income').textContent = formatCurrency(data.monthlyIncome || 0);
   document.getElementById('monthly-expenses').textContent = formatCurrency(data.monthlyExpenses || 0);
   document.getElementById('net-cash-flow').textContent = formatCurrency(data.netCashFlow || 0);
-  document.getElementById('salary-month').value = data.salaryMonth || state.month || new Date().toISOString().slice(0, 7);
+  document.getElementById('salary-month').value = data.salaryMonth || state.month || getManilaDateTime().date.slice(0, 7);
   state.month = data.salaryMonth || state.month;
 }
 
@@ -74,7 +83,7 @@ function renderTransactions(transactions, containerId = 'transaction-list') {
     description.textContent = transaction.description;
     const details = document.createElement('div');
     details.className = 'balance-label';
-    details.textContent = `${transaction.category || 'General'} • ${new Date(transaction.occurredAt).toLocaleString()}`;
+    details.textContent = `${transaction.category || 'General'} • ${new Date(transaction.occurredAt).toLocaleString('en-PH', { timeZone: 'Asia/Manila' })}`;
     const value = document.createElement('div');
     value.className = `amount ${direction}`;
     value.textContent = `${transaction.type === 'income' ? '+' : '-'}${formatCurrency(amount)}`;
@@ -93,7 +102,7 @@ function renderReports(report) {
 }
 
 async function loadOverview() {
-  const currentMonth = state.month || new Date().toISOString().slice(0, 7);
+  const currentMonth = state.month || getManilaDateTime().date.slice(0, 7);
   const response = await fetch(`/api/overview?month=${encodeURIComponent(currentMonth)}`);
   const data = await response.json();
 
@@ -126,16 +135,15 @@ async function loadTransactions() {
 }
 
 async function loadReports() {
-  const end = new Date();
-  const endDate = end.toISOString().slice(0, 10);
-  const response = await fetch(`/api/reports/period?period=month&end=${encodeURIComponent(endDate)}`);
+  const month = state.month || getManilaDateTime().date.slice(0, 7);
+  const response = await fetch(`/api/reports/period?period=month&start=${encodeURIComponent(`${month}-01`)}`);
   const data = await response.json();
   renderReports(data);
 }
 
 async function updatePlanningSummary() {
-  const month = document.getElementById('budget-month').value || state.month || new Date().toISOString().slice(0, 7);
-  const date = new Date().toISOString().slice(0, 10);
+  const month = document.getElementById('budget-month').value || state.month || getManilaDateTime().date.slice(0, 7);
+  const date = getManilaDateTime().date;
   const summary = document.getElementById('planning-summary');
 
   const [budgetResponse, dailyResponse] = await Promise.all([
@@ -240,7 +248,7 @@ async function loadCareerData() {
 }
 
 async function loadAll() {
-  const currentMonth = new Date().toISOString().slice(0, 7);
+  const currentMonth = getManilaDateTime().date.slice(0, 7);
   document.getElementById('budget-month').value = currentMonth;
   await loadOverview();
   await loadTransactions();
@@ -260,7 +268,7 @@ async function handleQuickEntry(event) {
     category: document.getElementById('entry-category').value || null,
     description: document.getElementById('entry-description').value,
     notes: document.getElementById('entry-notes').value,
-    occurredAt: `${document.getElementById('entry-date').value}T${document.getElementById('entry-time').value}:00`
+    occurredAt: `${document.getElementById('entry-date').value}T${document.getElementById('entry-time').value}:00+08:00`
   };
 
   await fetch('/api/transactions', {
@@ -300,14 +308,14 @@ async function handleAccountCreate(event) {
 
 function setDefaultEntryDateTime() {
   const now = new Date();
-  const date = now.toISOString().slice(0, 10);
-  const time = now.toTimeString().slice(0, 5);
+  const date = getManilaDateTime(now).date;
+  const time = getManilaDateTime(now).time;
   document.getElementById('entry-date').value = date;
   document.getElementById('entry-time').value = time;
 }
 
 function setDefaultCareerDates() {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = getManilaDateTime().date;
   document.getElementById('checkpoint-date').value = today;
   document.getElementById('journal-date').value = today;
   document.getElementById('task-date').value = today;
@@ -365,7 +373,7 @@ document.getElementById('payday-form').addEventListener('submit', async (event) 
     return;
   }
 
-  summary.textContent = `Estimated payday amount: ${formatCurrency(data.amount)} • available balance ${formatCurrency(data.inputs.availableBalance)} • reserves ${formatCurrency(data.inputs.reserves)}`;
+  summary.textContent = `Estimated daily spending: ${formatCurrency(data.amount)} • available balance ${formatCurrency(data.inputs.availableBalance)} • reserves ${formatCurrency(data.inputs.reserves)}; ${data.window.start} to ${data.window.end}`;
 });
 
 document.getElementById('quick-entry-button').addEventListener('click', () => {

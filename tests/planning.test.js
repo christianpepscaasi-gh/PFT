@@ -3,7 +3,8 @@ const assert = require('node:assert/strict');
 const request = require('supertest');
 const { createTestApp } = require('./app-helper');
 
-test('budget and reserve planning remain separate from actual balances', async () => {
+test('budget and reserve planning remain separate from actual balances', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-10-14T04:00:00Z') });
   const app = createTestApp();
 
   await request(app)

@@ -2,7 +2,7 @@ const express = require('express');
 const path = require('node:path');
 const dotenv = require('dotenv');
 const { createPersistenceStore, mongoose } = require('./src/persistence');
-const { getAccountBalance, getPhilippineDateKey } = require('./src/utils/finance');
+const { getAccountBalance, getPhilippineDateKey, getWeekWindow, parsePhilippineDate } = require('./src/utils/finance');
 
 dotenv.config();
 
@@ -86,17 +86,6 @@ function isDateKey(value) {
   return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
 }
 
-function parsePhilippineDate(dateString) {
-  if (!dateString) {
-    return new Date();
-  }
-
-  const hasTime = /T|\s/.test(dateString);
-  const normalized = hasTime ? dateString : `${dateString}T00:00:00`;
-  const asDate = new Date(normalized);
-  return Number.isNaN(asDate.getTime()) ? new Date(NaN) : asDate;
-}
-
 function getDateKeyForTransaction(dateString) {
   return getPhilippineDateKey(parsePhilippineDate(dateString));
 }
@@ -108,12 +97,14 @@ function normalizePeriodRange(period, start, end) {
     return { start: currentKey, end: currentKey };
   }
   if (period === 'week') {
-    return { start: start || currentKey, end: end || currentKey };
+    const week = getWeekWindow(parsePhilippineDate(start || end || currentKey));
+    return { start: start || week.start, end: end || week.end };
   }
   if (period === 'month') {
-    const monthPrefix = start || currentKey.slice(0, 7);
-    const monthEnd = end || `${monthPrefix}-31`;
-    return { start: `${monthPrefix}-01`, end: monthEnd };
+    const monthPrefix = (start || end || currentKey).slice(0, 7);
+    const [year, month] = monthPrefix.split('-').map(Number);
+    const monthEnd = new Date(Date.UTC(year, month, 0)).toISOString().slice(0, 10);
+    return { start: start || `${monthPrefix}-01`, end: end || monthEnd };
   }
   return { start: start || currentKey, end: end || currentKey };
 }
@@ -176,8 +167,9 @@ function getPaydayRecommendation({ nextExpectedPayday, reserves = 0, accountsTot
 
   const targetDate = new Date(`${nextExpectedPayday}T00:00:00+08:00`);
   const now = new Date();
-  const diffMs = targetDate.getTime() - now.getTime();
-  const days = Math.max(1, Math.ceil(diffMs / 86400000));
+  const today = getPhilippineDateKey(now);
+  const diffMs = targetDate.getTime() - parsePhilippineDate(today).getTime();
+  const days = diffMs / 86400000;
 
   if (availableBalance <= 0 || diffMs <= 0) {
     return {
@@ -281,7 +273,7 @@ function createApp({ persistenceStore } = {}) {
     if (amountCentavos === null || amountCentavos <= 0) {
       return res.status(400).json({ error: 'Amount must be positive and have no more than two decimal places.' });
     }
-    const date = occurredAt ? new Date(occurredAt) : new Date();
+    const date = occurredAt ? parsePhilippineDate(occurredAt) : new Date();
     if (Number.isNaN(date.getTime())) {
       return res.status(400).json({ error: 'Transaction date must be valid.' });
     }
@@ -329,7 +321,7 @@ function createApp({ persistenceStore } = {}) {
       patch.accountId = accountId;
     }
     if (occurredAt !== undefined) {
-      const date = new Date(occurredAt);
+      const date = parsePhilippineDate(occurredAt);
       if (Number.isNaN(date.getTime())) {
         return res.status(400).json({ error: 'Transaction date must be valid.' });
       }
@@ -367,6 +359,9 @@ function createApp({ persistenceStore } = {}) {
 
   app.get('/api/overview', asyncRoute(async (req, res) => {
     const month = String(req.query.month || getPhilippineDateKey(new Date()).slice(0, 7)).trim();
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
+      return res.status(400).json({ error: 'Month must use YYYY-MM format.' });
+    }
     const accounts = (await store.listAccounts()).filter((account) => !account.archived);
     const monthlyTransactions = (await store.listTransactions()).filter((transaction) => {
       return getDateKeyForTransaction(transaction.occurredAt).startsWith(month);
@@ -393,12 +388,18 @@ function createApp({ persistenceStore } = {}) {
 
   app.get('/api/reports/period', asyncRoute(async (req, res) => {
     const period = req.query.period || 'custom';
+    if (!['today', 'week', 'month', 'custom'].includes(period)) {
+      return res.status(400).json({ error: 'Report period must be today, week, month, or custom.' });
+    }
     const start = String(req.query.start || '').trim() || null;
     const end = String(req.query.end || '').trim() || null;
     if ((start && !isDateKey(start)) || (end && !isDateKey(end))) {
       return res.status(400).json({ error: 'Report dates must be valid ISO dates.' });
     }
     const range = normalizePeriodRange(period, start, end);
+    if (range.start > range.end) {
+      return res.status(400).json({ error: 'Report start must not be after end.' });
+    }
     const transactions = await store.listTransactions();
     const relevantTransactions = filterTransactionsByRange(transactions, range.start, range.end);
     const income = relevantTransactions
@@ -583,8 +584,12 @@ function createApp({ persistenceStore } = {}) {
   }));
 
   app.get('/api/planning/payday', asyncRoute(async (req, res) => {
+    if (req.query.nextExpectedPayday && !isDateKey(req.query.nextExpectedPayday)) {
+      return res.status(400).json({ error: 'Next expected payday must be a valid ISO date.' });
+    }
     const [accounts, reserves] = await Promise.all([store.listAccounts(), store.listReserves()]);
-    const accountsTotal = accounts.reduce((total, account) => total + Number(account.balance || 0), 0);
+    const accountsTotal = accounts.filter((account) => !account.archived)
+      .reduce((total, account) => total + Number(account.balance || 0), 0);
     const reserveTotal = reserves.reduce((total, reserve) => total + Number(reserve.amount || 0), 0);
     const recommendation = getPaydayRecommendation({
       nextExpectedPayday: req.query.nextExpectedPayday || null,
