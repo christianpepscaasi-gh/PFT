@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const { randomUUID } = require('node:crypto');
+const { ACCOUNT_TYPES } = require('./utils/accounts');
 const { getAccountBalance, getPhilippineDateKey } = require('./utils/finance');
 
 const moneyField = {
@@ -25,8 +26,8 @@ const timestampOptions = { timestamps: true, versionKey: false };
 
 const accountSchema = new mongoose.Schema({
   _id: { type: String, default: () => randomUUID() },
-  name: { type: String, required: true },
-  type: { type: String, required: true },
+  name: { type: String, required: true, trim: true },
+  type: { type: String, required: true, enum: ACCOUNT_TYPES },
   initialBalance: { ...signedMoneyField, default: 0 },
   archived: { type: Boolean, default: false }
 }, { ...timestampOptions, _id: false });
@@ -323,9 +324,13 @@ function createInMemoryPersistenceStore() {
       return account ? serializeAccount(account, state.transactions) : null;
     },
     async createAccount(payload) {
+      const validated = new Account({ name: payload.name, type: payload.type, initialBalance: payload.initialBalance });
+      await validated.validate();
       const account = {
         _id: randomUUID(),
-        ...payload,
+        name: validated.name,
+        type: validated.type,
+        initialBalance: validated.initialBalance,
         archived: false,
         createdAt: now(),
         updatedAt: now()

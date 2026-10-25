@@ -227,8 +227,8 @@ async function loadReports() {
 }
 
 async function updatePlanningSummary() {
-  const month = document.getElementById('budget-month').value || state.month || getManilaDateTime().date.slice(0, 7);
   const date = getManilaDateTime().date;
+  const month = date.slice(0, 7);
   const summary = document.getElementById('planning-summary');
 
   const [budgetResponse, dailyResponse] = await Promise.all([

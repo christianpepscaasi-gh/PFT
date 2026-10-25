@@ -64,6 +64,33 @@ test('daily target uses the monthly budget as a suggestion, not a restriction', 
 });
 
 
+test('daily target rejects a budget month that differs from its date, even with an override', async () => {
+  const app = createTestApp();
+  await request(app).post('/api/budgets').send({ month: '2026-11', amount: 3000 });
+  for (const overridden of [false, true]) {
+    if (overridden) await request(app).post('/api/daily-limits/override').send({ date: '2026-10-31', targetAmount: 100 });
+    const response = await request(app).get('/api/planning/daily-target').query({ date: '2026-10-31', month: '2026-11' });
+    assert.equal(response.status, 400);
+    assert.match(response.body.error, /month must match/i);
+  }
+});
+
+test('daily target derives its budget month from the Philippine date across month boundaries', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-10-31T16:00:00Z') });
+  const app = createTestApp();
+  await request(app).post('/api/budgets').send({ month: '2026-10', amount: 3100 });
+  await request(app).post('/api/budgets').send({ month: '2026-11', amount: 3000 });
+  const current = await request(app).get('/api/planning/daily-target');
+  assert.equal(current.status, 200);
+  assert.equal(current.body.date, '2026-11-01');
+  assert.equal(current.body.monthlyBudget, 3000);
+  assert.equal(current.body.remainingDays, 30);
+  assert.equal(current.body.amount, 100);
+  const historical = await request(app).get('/api/planning/daily-target?date=2026-10-31');
+  assert.equal(historical.body.month, '2026-10');
+  assert.equal(historical.body.amount, 3100);
+});
+
 test('daily spending warnings change state without blocking transactions or changing balances', async () => {
   const app = createTestApp();
   const account = await request(app).post('/api/accounts').send({ name: 'Cash', type: 'Cash', initialBalance: 100 });

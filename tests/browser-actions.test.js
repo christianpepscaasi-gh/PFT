@@ -19,6 +19,25 @@ function browser(fetch) {
   return { context, elements, modal };
 }
 
+test('planning summary uses today\'s budget even when another month is selected for editing', async () => {
+  const calls = [];
+  const { context, elements } = browser(async (url) => {
+    calls.push(url);
+    return { ok: true, json: async () => url === '/api/budgets'
+      ? [{ month: '2026-10', amount: 3100 }, { month: '2026-11', amount: 9000 }]
+      : { amount: 100, kind: 'suggestion' } };
+  });
+  elements.set('budget-month', { value: '2026-11' });
+  elements.set('planning-summary', { textContent: '' });
+  vm.runInContext("getManilaDateTime = () => ({ date: '2026-10-01', time: '00:00' })", context);
+  await context.updatePlanningSummary();
+  const targetUrl = new URL(calls.find((url) => url.startsWith('/api/planning/daily-target')), 'http://localhost');
+  assert.equal(targetUrl.searchParams.get('date'), '2026-10-01');
+  assert.equal(targetUrl.searchParams.get('month'), '2026-10');
+  assert.match(elements.get('planning-summary').textContent, /3,100/);
+  assert.equal(elements.get('budget-month').value, '2026-11');
+});
+
 test('failed quick entry retains input, keeps modal open, and shows the API error', async () => {
   const { context, elements, modal } = browser(async () => ({ ok: false, json: async () => ({ error: 'Database is unavailable.' }) }));
   const button = { disabled: false };

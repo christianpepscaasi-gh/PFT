@@ -1,6 +1,7 @@
 const express = require('express');
 const path = require('node:path');
 const dotenv = require('dotenv');
+const { ACCOUNT_TYPES } = require('./src/utils/accounts');
 const { createPersistenceStore, mongoose } = require('./src/persistence');
 const { getAccountBalance, getPhilippineDateKey, getWeekWindow, parsePhilippineDate } = require('./src/utils/finance');
 
@@ -8,6 +9,10 @@ dotenv.config();
 
 function asyncRoute(handler) {
   return (req, res, next) => Promise.resolve(handler(req, res, next)).catch(next);
+}
+
+function isAccountId(value) {
+  return typeof value === 'string' && value.trim().length > 0;
 }
 
 function logFailure(operation, error) {
@@ -272,19 +277,25 @@ function createApp({ persistenceStore } = {}) {
 
   app.post('/api/accounts', asyncRoute(async (req, res) => {
     const { name, type, initialBalance = 0 } = req.body;
-    if (!name || !type) {
-      return res.status(400).json({ error: 'Account name and type are required.' });
+    if (typeof name !== 'string' || !name.trim()) {
+      return res.status(400).json({ error: 'Account name must be a non-empty string.' });
+    }
+    if (!ACCOUNT_TYPES.includes(type)) {
+      return res.status(400).json({ error: 'Account type must be Cash, Bank, E-wallet, Credit Card, or Other.' });
     }
     const initialBalanceCentavos = parseMoneyInCentavos(initialBalance);
     if (initialBalanceCentavos === null) {
       return res.status(400).json({ error: 'Initial balance must be a valid amount with no more than two decimal places.' });
     }
 
-    const account = await store.createAccount({ name, type, initialBalance: initialBalanceCentavos });
+    const account = await store.createAccount({ name: name.trim(), type, initialBalance: initialBalanceCentavos });
     return res.status(201).json(serializeAccount(account));
   }));
 
   app.get('/api/transactions', asyncRoute(async (req, res) => {
+    if (req.query.accountId !== undefined && !isAccountId(req.query.accountId)) {
+      return res.status(400).json({ error: 'Account ID must be a single non-empty string.' });
+    }
     res.json((await store.listTransactions(req.query.accountId || null)).map(serializeTransaction));
   }));
 
@@ -292,6 +303,9 @@ function createApp({ persistenceStore } = {}) {
     const { accountId, type, amount, description, category, occurredAt, notes } = req.body;
     if (!accountId || !type || !description || amount == null) {
       return res.status(400).json({ error: 'Account, type, description, and amount are required.' });
+    }
+    if (!isAccountId(accountId)) {
+      return res.status(400).json({ error: 'Account ID must be a single non-empty string.' });
     }
     if (!await store.getAccount(accountId)) {
       return res.status(404).json({ error: 'Account not found.' });
@@ -345,6 +359,9 @@ function createApp({ persistenceStore } = {}) {
       patch.type = type;
     }
     if (accountId !== undefined) {
+      if (!isAccountId(accountId)) {
+        return res.status(400).json({ error: 'Account ID must be a single non-empty string.' });
+      }
       if (!await store.getAccount(accountId)) {
         return res.status(404).json({ error: 'Account not found.' });
       }
@@ -662,9 +679,15 @@ function createApp({ persistenceStore } = {}) {
 
   app.get('/api/planning/daily-target', asyncRoute(async (req, res) => {
     const targetDate = req.query.date || getPhilippineDateKey(new Date());
-    const targetMonth = req.query.month || targetDate.slice(0, 7);
-    if (!isDateKey(targetDate) || !/^\d{4}-(0[1-9]|1[0-2])$/.test(targetMonth)) {
+    if (!isDateKey(targetDate)) {
       return res.status(400).json({ error: 'Date and month must be valid ISO date values.' });
+    }
+    const targetMonth = req.query.month || targetDate.slice(0, 7);
+    if (typeof targetMonth !== 'string' || !/^\d{4}-(0[1-9]|1[0-2])$/.test(targetMonth)) {
+      return res.status(400).json({ error: 'Date and month must be valid ISO date values.' });
+    }
+    if (targetMonth !== targetDate.slice(0, 7)) {
+      return res.status(400).json({ error: 'Budget month must match the target date month.' });
     }
     const budget = await store.getBudget(targetMonth);
     const result = getDailyTargetForDate(budget, targetDate, targetMonth);
