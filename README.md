@@ -2,7 +2,7 @@
 
 Pocket Ledger is a personal finance tracker for recording income and expenses, reviewing account balances, and keeping budgets and spending plans separate from actual money. It also includes an optional career-progress area for probation dates, checkpoints, skills, tasks, and learning notes.
 
-> **Development status:** Normal application operations use MongoDB for all resource types. MongoDB is required; startup does not fall back to memory. Authentication is not implemented. Production readiness still requires successful persistence tests and the protected deployment checks in [FUTURE_INTEGRATION.md](FUTURE_INTEGRATION.md#63-vercel-deployment-readiness-gate).
+> **Development status:** Normal application operations and sessions use MongoDB. Startup does not fall back to memory. Email/password authentication APIs and User ownership are implemented; browser login, Admin management, and actual personal setup are still pending. Production readiness requires reviewed provisioning/migration and the protected deployment checks in [FUTURE_INTEGRATION.md](FUTURE_INTEGRATION.md#63-vercel-deployment-readiness-gate).
 
 ## Features
 
@@ -13,7 +13,7 @@ Pocket Ledger is a personal finance tracker for recording income and expenses, r
 - Optional career tracking for probation, checkpoints, skills, tasks, and a learning journal.
 - Philippine-local date handling for financial calculations.
 
-The app does not currently provide login, multi-user accounts, or Admin/User roles. Those are future scope, not implemented features.
+Admin/User implementation is tracked in [ADMIN_USER_PLAN.md](ADMIN_USER_PLAN.md). Business APIs require an active User session; Admin has no finance/Career access. See [AUTHENTICATION_SETUP.md](AUTHENTICATION_SETUP.md) for private test bootstrap and the API login/CSRF handshake. The browser workspace is not yet wired to login or CSRF tokens, so normal browser use awaits Phase 5. There is no default owner, password, public registration, or impersonation header. The [ownership migration runbook](OWNERSHIP_MIGRATION_RUNBOOK.md) covers test rehearsal and the separate live-migration gate.
 
 ## Requirements
 
@@ -29,7 +29,17 @@ npm run dev
 
 Open <http://localhost:3000>.
 
-Configure `MONGODB_URI` in your local `.env` before starting. Accounts, transactions, budgets, reserves, daily overrides, and Career records use MongoDB. `/health` reports process liveness; `/ready` checks database readiness. A failed initial connection prevents normal startup.
+Normal startup uses `MONGODB_URI`. In this workspace that variable is live: use `npm run dev:test` for development verification instead. Accounts, transactions, budgets, reserves, daily overrides, and Career records use MongoDB. `/health` reports process liveness; `/ready` checks database readiness. A failed initial connection prevents normal startup.
+
+### Localhost with isolated test data
+
+```bash
+npm run dev:test
+```
+
+This command requires `MONGODB_URI_TEST` (aliases: `MONGODB_TEST_URI`, `MONGO_URI_TEST`) and a private `SESSION_SECRET` of at least 32 bytes. It selects the dedicated test connection before importing the app, replaces live configuration only in the current process, and binds to `127.0.0.1` on `PORT` (default `3000`). The browser origin must match `APP_ORIGIN` (default `http://127.0.0.1:<PORT>`). It refuses a missing/invalid test connection and never falls back to `MONGODB_URI`.
+
+Browser test data is kept in the fixed `pft_test_local` database on the test connection, including after shutdown. Automated restart/ownership/migration/authentication tests use separate randomly named databases and clean those up. The shell/health/readiness work, and business requests require login. The server command does not modify `.env`, migrate records, seed identities, or delete browser test data. Explicit private provisioning uses `npm run bootstrap:test -- --target test [--apply]` with stdin, as documented in the setup guide.
 
 To run without Nodemon:
 
@@ -45,6 +55,9 @@ Copy `.env.example` to a local `.env` and configure your database. `.env` is exc
 | --- | --- | --- |
 | `PORT` | No | HTTP port; defaults to `3000`. |
 | `MONGODB_URI` | Yes | Backend-only MongoDB connection string. |
+| `MONGODB_URI_TEST` | For test commands | Dedicated test connection; never use live credentials. |
+| `SESSION_SECRET` | For server authentication | Private random secret, at least 32 bytes; no real value in source control. |
+| `APP_ORIGIN` | For browser API requests | Exact local origin; HTTPS required in production. |
 
 Example local configuration:
 
@@ -63,9 +76,9 @@ npm test
 npm run validate
 ```
 
-`npm run validate` runs ESLint and the automated test suite.
+`npm run validate` runs ESLint and the automated test suite. `npm test` loads the dedicated test connection and replaces all Mongo URI variables in the child test process before importing application code. It refuses missing or invalid test configuration. An explicit source database name must contain `test`; database-name query overrides are rejected. No actual URI is printed.
 
-The restart persistence test reads `MONGODB_URI_TEST` first (aliases: `MONGODB_TEST_URI`, `MONGO_URI_TEST`). An explicit database name must contain `test`; a connection URI without a database name is also supported. It creates and drops a uniquely named `pft_test_*` database using that test connection; never supply production credentials. `MONGODB_URI` is for normal application operation and is not the restart test target. Without a test URI, this test is skipped and Mongo persistence is unverified.
+The Mongo integration tests create and drop uniquely named `pft_test_*` databases using that test connection; never supply production credentials. To deliberately run without live Mongo verification, use `npm run test:unit`. That command clears all Mongo URI variables in its child process and explicitly skips Mongo integration checks; it is not a full validation pass. Avoid raw `node --test` for the complete suite because it bypasses the safe configuration wrapper. On Windows PowerShell, use `npm.cmd` if execution policy blocks `npm.ps1`.
 
 Financial calendar dates use `Asia/Manila`. Offset-free transaction timestamps are interpreted as Philippine wall-clock time; explicit offsets remain authoritative. Current balances include records through today?s Philippine date, while historical reports calculate balances through their selected end date. Weekly reports default to Monday?Sunday; custom report endpoints are inclusive. Monthly reports accept full `YYYY-MM-DD` start/end dates and derive omitted boundaries from that month.
 
@@ -102,7 +115,7 @@ This is an Express/Node application, so GitHub Pages cannot host the running app
 6. Configure secrets through the host's environment-variable settings, never in committed files.
 7. Run `npm run check`, `npm test`, and `npm run validate` before releasing changes.
 
-**Demo warning:** A hosted instance currently uses process memory for API records. Restarting or redeploying will clear that data, and a host's temporary filesystem should not be treated as a database. Do not enter real or sensitive financial information until MongoDB persistence, ownership/security requirements, and deployment hardening are implemented.
+**Hosting status:** Records and sessions persist in MongoDB. Real provisioning, reviewed live ownership migration, browser workflows, and deployment protections still require completion before exposing real financial data. Vercel/proxy configuration is future work.
 
 ## Project documents
 

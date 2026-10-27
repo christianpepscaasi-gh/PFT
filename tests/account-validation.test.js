@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const request = require('supertest');
 const { createTestApp } = require('./app-helper');
 const { createInMemoryPersistenceStore, models } = require('../src/persistence');
+const { createIdentityFixtures } = require('./fixtures/identities');
 
 test('account creation rejects invalid names and unsupported types without saving them', async () => {
   const app = createTestApp();
@@ -50,9 +51,9 @@ test('invalid transaction account references are rejected without changing histo
 });
 
 test('Mongo schema and memory adapter enforce account names and types consistently', async () => {
-  const store = createInMemoryPersistenceStore();
+  const store = createInMemoryPersistenceStore().forUser(createIdentityFixtures().userA);
   for (const payload of [{ name: ' ', type: 'Cash' }, { name: 'Wallet', type: 'Unsupported' }]) {
-    await assert.rejects(new models.Account({ ...payload, initialBalance: 0 }).validate(), { name: 'ValidationError' });
+    await assert.rejects(new models.Account({ ...payload, userId: createIdentityFixtures().userA._id, initialBalance: 0 }).validate(), { name: 'ValidationError' });
     await assert.rejects(store.createAccount({ ...payload, initialBalance: 0 }), { name: 'ValidationError' });
   }
   const account = await store.createAccount({ name: ' Wallet ', type: 'Other', initialBalance: 0 });

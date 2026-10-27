@@ -1,12 +1,17 @@
 const assert = require('node:assert/strict');
 const { once } = require('node:events');
 const { getPhilippineDateKey } = require('../src/utils/finance');
-const app = require('../server');
+const { createApp } = require('../server');
+const { createPersistenceStore } = require('../src/persistence');
+const { createIdentityFixtures } = require('./fixtures/identities');
+const identity = createIdentityFixtures().userA;
+const root = createPersistenceStore();
+const app = createApp({ persistenceStore: root, resolveIdentity: async () => identity });
 
 async function main() {
   const phase = process.argv[2];
   const snapshot = JSON.parse(process.argv[3] || '{}');
-  const store = app.locals.persistenceStore;
+  const store = root.forUser(identity);
   let server;
 
   try {
@@ -30,7 +35,7 @@ async function main() {
     if (phase === 'create') {
       const account = await api('/api/accounts', 'POST', {
         name: `Mongo restart ${process.pid}`,
-        type: 'Test',
+        type: 'Other',
         initialBalance: 1000.25
       });
       const expense = await api('/api/transactions', 'POST', {

@@ -2,7 +2,7 @@
 
 Date: October 26, 2026 (Asia/Manila)
 
-Status: Product decisions captured; implementation has not started. This document plans the scope agreed in the Q&A. It does not authorize a production migration, push, or deployment.
+Status: Phases 1-3 implemented locally October 27, 2026; ownership, migration rehearsal, authentication APIs, sessions, and the test-only bootstrap command are verified. Real personal setup, account-request/activation management, browser login/dashboard, and email delivery remain pending. This document tracks the scope agreed in the Q&A. It does not authorize a production migration, push, or deployment.
 
 ## 1. Agreed product decisions
 
@@ -87,32 +87,32 @@ Enforce permissions on the server. Hiding navigation is only presentation. Rejec
 
 ### Phase 1: scope alignment and safe test setup
 
-- [ ] Add the scoped PRD addendum and align future-integration documentation.
-- [ ] Inventory every API route, repository operation, report, resource, and singleton/unique index that needs ownership.
-- [ ] Add isolated multi-user test fixtures: Admin, User A, User B, pending User, disabled User.
-- [ ] Provide a deliberate localhost test-server configuration that selects only the test database without editing `.env` or falling back to live configuration.
-- [ ] Resolve the current test-cluster connectivity failure before declaring real-Mongo checks complete.
+- [x] Add the scoped PRD addendum and align future-integration documentation.
+- [x] Inventory every API route, repository operation, report, resource, and singleton/unique index that needs ownership. See [ADMIN_USER_OWNERSHIP_INVENTORY.md](ADMIN_USER_OWNERSHIP_INVENTORY.md).
+- [x] Add isolated multi-user test fixtures: Admin, User A, User B, pending User, disabled User. These are test descriptions only; identities are not yet persisted or authenticated.
+- [x] Provide a deliberate localhost test-server configuration that selects only the test database without editing `.env` or falling back to live configuration. Commands: `npm run dev:test`, `npm test`, and explicit `npm run test:unit`.
+- [x] Resolve the current test-cluster connectivity failure before declaring real-Mongo checks complete. October 27 final network-enabled validation passed all 57 tests, including restart persistence and temporary-database cleanup; no connection credentials or live configuration changed. The localhost test server passed readiness, health, and UI-shell HTTP checks and was stopped afterward.
 
 ### Phase 2: ownership and existing-data migration
 
-- [ ] Add immutable `userId` to accounts, transactions, budgets, reserves, daily overrides, and all Career record types.
-- [ ] Scope reads, writes, deletes, aggregates, report queries, upserts, and account balance calculations by authenticated owner.
-- [ ] Verify referenced accounts belong to the same User on transaction creation and reassignment.
-- [ ] Replace global uniqueness/singleton assumptions with owner-scoped indexes and behavior, including budget month, daily override date, and probation records.
-- [ ] Apply matching ownership behavior to Mongo and the memory test adapter.
-- [ ] Prepare an explicit-owner, idempotent migration with dry run, counts, orphan-reference detection, index handling, backup, and rollback instructions.
-- [ ] Rehearse on isolated representative test data; verify balances, important reports, history, planning, and Career records before/after.
+- [x] Add immutable `userId` to accounts, transactions, budgets, reserves, daily overrides, and all Career record types.
+- [x] Scope reads, writes, deletes, aggregates, report queries, upserts, and account balance calculations by trusted owner. The server resolver is fail-closed until Phase 3 implements authenticated sessions; tests inject explicit server-side identities.
+- [x] Verify referenced accounts belong to the same User on transaction creation and reassignment.
+- [x] Replace global uniqueness/singleton assumptions with owner-scoped indexes and behavior, including budget month, daily override date, and probation records. Legacy-index removal is an explicit migration step, never implicit startup cleanup.
+- [x] Apply matching ownership behavior to Mongo and the memory test adapter.
+- [x] Prepare an explicit-owner, idempotent test-only migration with dry run, counts, orphan-reference detection, index handling, snapshot backup, and rollback instructions. See [OWNERSHIP_MIGRATION_RUNBOOK.md](OWNERSHIP_MIGRATION_RUNBOOK.md); live execution and durable production backup remain a separate gate.
+- [x] Rehearse on isolated representative test data; verify balances, important reports, history, planning, and Career records before/after. October 27 validation: 67 passed, zero failures/skips, including Mongo isolation/reconnect, index uniqueness, migration/rollback/drift checks, restart persistence, and temporary-database cleanup.
 
 The live migration assigns legacy data to the owner's personal User identity, never the Admin. Do not expose ownerless records or enable multi-user access during a partially completed migration. Schedule migration with writes stopped. A live migration requires a separately reviewed concrete execution step; this plan does not run it.
 
 ### Phase 3: authentication and single-Admin provisioning
 
-- [ ] Provision exactly one Admin and a distinct personal User through a controlled, rerunnable bootstrap command.
-- [ ] Require explicit target environment and identities; no default password or automatic ownership guessing.
-- [ ] Implement password hashing, session storage, login, logout, and current-session identity lookup.
-- [ ] Add CSRF checks, session revocation, and abuse controls.
-- [ ] Require authentication throughout private APIs; require the User role for finance/planning/Career APIs.
-- [ ] Enforce current status/role server-side, including on requests from existing sessions.
+- [x] Implement and verify provisioning of exactly one Admin and a distinct personal User through a controlled, rerunnable test bootstrap command. Synthetic setup was tested in temporary databases; the owner's real private account setup has not been run.
+- [x] Require explicit test target and identities via private stdin; no default password or automatic ownership guessing. Live bootstrap is not implemented/authorized by this command.
+- [x] Implement scrypt password hashing, Mongo session storage, login, logout, and current-session identity lookup. See [AUTHENTICATION_SETUP.md](AUTHENTICATION_SETUP.md).
+- [x] Add CSRF/origin checks, session rotation/absolute expiry/revocation, and shared Mongo login/CSRF-issuance throttles.
+- [x] Require authentication throughout private APIs; require the User role for finance/planning/Career APIs.
+- [x] Enforce current status/role/version server-side, including on requests from existing sessions. Disabling/re-enabling does not revive old sessions; audited management endpoints come in Phase 4.
 
 Phases 2 and 3 are a combined release gate: neither may be enabled for real users without the other. Avoid an intermediate release that adds login but leaves unscoped routes accessible.
 
@@ -173,4 +173,4 @@ No production database access, migration, credential changes, push, or deploymen
 - Permanent deletion, retention policy, and request/audit-record retention periods. Decide retention before a public client launch.
 - Vercel deployment and any production rollout.
 
-Next implementation task: Phase 1 documentation alignment, route/ownership inventory, and safe isolated test setup. Preserve current uncommitted stabilization changes.
+Next implementation task: Phase 4 account requests, approval/rejection, pending User creation and activation-token core, plus audited Admin management/status changes. Phase 5 adds browser login/dashboard/CSRF handling. Real private setup and live migration remain separate; keep changes local until requested otherwise and do not deploy before the release gates pass.

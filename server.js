@@ -1,6 +1,7 @@
 const express = require('express');
 const path = require('node:path');
 const dotenv = require('dotenv');
+const { createMongoAuthentication } = require('./src/auth/authentication');
 const { ACCOUNT_TYPES } = require('./src/utils/accounts');
 const { createPersistenceStore, mongoose } = require('./src/persistence');
 const { getAccountBalance, getPhilippineDateKey, getWeekWindow, parsePhilippineDate } = require('./src/utils/finance');
@@ -230,7 +231,7 @@ function serializeProbation(record) {
   };
 }
 
-function createApp({ persistenceStore } = {}) {
+function createApp({ persistenceStore, resolveIdentity, authentication } = {}) {
   const store = persistenceStore || createPersistenceStore({ mongoUri: process.env.MONGODB_URI });
   const app = express();
   app.locals.persistenceStore = store;
@@ -263,16 +264,29 @@ function createApp({ persistenceStore } = {}) {
     return res.json({ ok: true, ready: true, database: store.mode });
   }));
 
+  const auth = authentication || (!resolveIdentity && store.mode === 'mongo' && process.env.SESSION_SECRET
+    ? createMongoAuthentication(store) : null);
+  if (auth) auth.install(app);
+  else app.use('/api/auth', (req, res) => res.status(503).json({ error: 'Authentication is not configured.' }));
+
   app.use('/api', asyncRoute(async (req, res, next) => {
-    await store.connect();
-    if (!store.isReady()) {
-      return res.status(503).json({ error: 'Database is unavailable.' });
+    const identity = resolveIdentity ? await resolveIdentity(req) : auth ? await auth.resolveIdentity(req, res) : null;
+    if (!identity) return res.status(401).json({ error: 'Authentication required.' });
+    if (identity.role !== 'user' || identity.status !== 'active') {
+      return res.status(403).json({ error: 'An active User account is required.' });
     }
+    if (auth && !auth.verifyCsrf(req, res)) return;
+    req.userStore = store.forUser(identity);
+    if ([req.body, req.query].some((input) => input && ['userId', 'role'].some((key) => Object.hasOwn(input, key)))) {
+      return res.status(400).json({ error: 'Identity and ownership fields cannot be supplied.' });
+    }
+    await req.userStore.connect();
+    if (!store.isReady()) return res.status(503).json({ error: 'Database is unavailable.' });
     return next();
   }));
 
   app.get('/api/accounts', asyncRoute(async (req, res) => {
-    res.json((await store.listAccounts()).map(serializeAccount));
+    res.json((await req.userStore.listAccounts()).map(serializeAccount));
   }));
 
   app.post('/api/accounts', asyncRoute(async (req, res) => {
@@ -288,7 +302,7 @@ function createApp({ persistenceStore } = {}) {
       return res.status(400).json({ error: 'Initial balance must be a valid amount with no more than two decimal places.' });
     }
 
-    const account = await store.createAccount({ name: name.trim(), type, initialBalance: initialBalanceCentavos });
+    const account = await req.userStore.createAccount({ name: name.trim(), type, initialBalance: initialBalanceCentavos });
     return res.status(201).json(serializeAccount(account));
   }));
 
@@ -296,7 +310,7 @@ function createApp({ persistenceStore } = {}) {
     if (req.query.accountId !== undefined && !isAccountId(req.query.accountId)) {
       return res.status(400).json({ error: 'Account ID must be a single non-empty string.' });
     }
-    res.json((await store.listTransactions(req.query.accountId || null)).map(serializeTransaction));
+    res.json((await req.userStore.listTransactions(req.query.accountId || null)).map(serializeTransaction));
   }));
 
   app.post('/api/transactions', asyncRoute(async (req, res) => {
@@ -307,7 +321,7 @@ function createApp({ persistenceStore } = {}) {
     if (!isAccountId(accountId)) {
       return res.status(400).json({ error: 'Account ID must be a single non-empty string.' });
     }
-    if (!await store.getAccount(accountId)) {
+    if (!await req.userStore.getAccount(accountId)) {
       return res.status(404).json({ error: 'Account not found.' });
     }
     if (!['income', 'expense'].includes(type)) {
@@ -322,7 +336,7 @@ function createApp({ persistenceStore } = {}) {
       return res.status(400).json({ error: 'Transaction date must be valid.' });
     }
 
-    const transaction = await store.createTransaction({
+    const transaction = await req.userStore.createTransaction({
       accountId,
       type,
       amount: amountCentavos,
@@ -335,7 +349,7 @@ function createApp({ persistenceStore } = {}) {
   }));
 
   app.patch('/api/transactions/:id', asyncRoute(async (req, res) => {
-    const transaction = await store.getTransaction(req.params.id);
+    const transaction = await req.userStore.getTransaction(req.params.id);
     if (!transaction) {
       return res.status(404).json({ error: 'Transaction not found.' });
     }
@@ -362,7 +376,7 @@ function createApp({ persistenceStore } = {}) {
       if (!isAccountId(accountId)) {
         return res.status(400).json({ error: 'Account ID must be a single non-empty string.' });
       }
-      if (!await store.getAccount(accountId)) {
+      if (!await req.userStore.getAccount(accountId)) {
         return res.status(404).json({ error: 'Account not found.' });
       }
       patch.accountId = accountId;
@@ -375,11 +389,11 @@ function createApp({ persistenceStore } = {}) {
       patch.occurredAt = date;
     }
 
-    return res.json(serializeTransaction(await store.updateTransaction(req.params.id, patch)));
+    return res.json(serializeTransaction(await req.userStore.updateTransaction(req.params.id, patch)));
   }));
 
   app.delete('/api/transactions/:id', asyncRoute(async (req, res) => {
-    const deleted = await store.deleteTransaction(req.params.id);
+    const deleted = await req.userStore.deleteTransaction(req.params.id);
     if (!deleted) {
       return res.status(404).json({ error: 'Transaction not found.' });
     }
@@ -387,8 +401,8 @@ function createApp({ persistenceStore } = {}) {
   }));
 
   app.get('/api/reports/overview', asyncRoute(async (req, res) => {
-    const accounts = (await store.listAccounts()).filter((account) => !account.archived);
-    const transactions = excludeFutureSalary(await store.listTransactions());
+    const accounts = (await req.userStore.listAccounts()).filter((account) => !account.archived);
+    const transactions = excludeFutureSalary(await req.userStore.listTransactions());
     const income = transactions
       .filter((transaction) => transaction.type === 'income')
       .reduce((total, transaction) => total + Number(transaction.amount || 0), 0);
@@ -409,8 +423,8 @@ function createApp({ persistenceStore } = {}) {
     if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
       return res.status(400).json({ error: 'Month must use YYYY-MM format.' });
     }
-    const accounts = (await store.listAccounts()).filter((account) => !account.archived);
-    const monthlyTransactions = excludeFutureSalary(await store.listTransactions()).filter((transaction) => {
+    const accounts = (await req.userStore.listAccounts()).filter((account) => !account.archived);
+    const monthlyTransactions = excludeFutureSalary(await req.userStore.listTransactions()).filter((transaction) => {
       return getDateKeyForTransaction(transaction.occurredAt).startsWith(month);
     });
     const monthlyIncome = monthlyTransactions
@@ -457,7 +471,7 @@ function createApp({ persistenceStore } = {}) {
     if (range.start > range.end) {
       return res.status(400).json({ error: 'Report start must not be after end.' });
     }
-    const transactions = await store.listTransactions();
+    const transactions = await req.userStore.listTransactions();
     const relevantTransactions = filterTransactionsByRange(excludeFutureSalary(transactions), range.start, range.end);
     const income = relevantTransactions
       .filter((transaction) => transaction.type === 'income')
@@ -465,7 +479,7 @@ function createApp({ persistenceStore } = {}) {
     const expenses = relevantTransactions
       .filter((transaction) => transaction.type === 'expense')
       .reduce((total, transaction) => total + Number(transaction.amount || 0), 0);
-    const accountBalances = (await store.listAccounts()).map((account) => {
+    const accountBalances = (await req.userStore.listAccounts()).map((account) => {
       return buildAccountSummaryAtDate(account, range.end, transactions);
     });
 
@@ -488,7 +502,7 @@ function createApp({ persistenceStore } = {}) {
       return res.status(400).json({ error: 'Month must use YYYY-MM format.' });
     }
     const monthPrefix = month || getPhilippineDateKey(new Date()).slice(0, 7);
-    const monthTransactions = excludeFutureSalary(await store.listTransactions()).filter((transaction) => {
+    const monthTransactions = excludeFutureSalary(await req.userStore.listTransactions()).filter((transaction) => {
       return transaction.type === 'income'
         && transaction.category === 'Salary'
         && getDateKeyForTransaction(transaction.occurredAt).startsWith(monthPrefix);
@@ -514,7 +528,7 @@ function createApp({ persistenceStore } = {}) {
     const start = new Date(`${startDate}T00:00:00+08:00`);
     const end = new Date(`${endDate}T00:00:00+08:00`);
     const now = new Date();
-    const probation = await store.saveCareerProbation({
+    const probation = await req.userStore.saveCareerProbation({
       startDate,
       endDate,
       elapsedDays: Math.max(0, Math.floor((now.getTime() - start.getTime()) / 86400000)),
@@ -525,7 +539,7 @@ function createApp({ persistenceStore } = {}) {
   }));
 
   app.get('/api/career/probation', asyncRoute(async (req, res) => {
-    res.json(serializeProbation(await store.getCareerProbation()));
+    res.json(serializeProbation(await req.userStore.getCareerProbation()));
   }));
 
   const careerRoutes = [
@@ -574,16 +588,16 @@ function createApp({ persistenceStore } = {}) {
       if (route.path === 'tasks' && req.body.dueDate && !isDateKey(req.body.dueDate)) {
         return res.status(400).json({ error: 'Task date must be a valid ISO date.' });
       }
-      const record = await store.createCareerEntry(route.path, route.fields(req.body));
+      const record = await req.userStore.createCareerEntry(route.path, route.fields(req.body));
       return res.status(201).json(record);
     }));
     app.get(`/api/career/${route.path}`, asyncRoute(async (req, res) => {
-      res.json(await store.listCareerEntries(route.path));
+      res.json(await req.userStore.listCareerEntries(route.path));
     }));
   }
 
   app.get('/api/budgets', asyncRoute(async (req, res) => {
-    res.json((await store.listBudgets()).map((budget) => serializeMoneyFields(budget, ['amount'])));
+    res.json((await req.userStore.listBudgets()).map((budget) => serializeMoneyFields(budget, ['amount'])));
   }));
 
   app.post('/api/budgets', asyncRoute(async (req, res) => {
@@ -599,7 +613,7 @@ function createApp({ persistenceStore } = {}) {
       return res.status(400).json({ error: 'Budget amount must be positive and have no more than two decimal places.' });
     }
 
-    const result = await store.upsertBudget(month, amountCentavos);
+    const result = await req.userStore.upsertBudget(month, amountCentavos);
     return res.status(result.created ? 201 : 200).json(serializeMoneyFields(result.record, ['amount']));
   }));
 
@@ -609,7 +623,7 @@ function createApp({ persistenceStore } = {}) {
     if (amountCentavos === null || amountCentavos < 0) {
       return res.status(400).json({ error: 'Reserve amount must be non-negative and have no more than two decimal places.' });
     }
-    const reserve = await store.createReserve({ amount: amountCentavos, label });
+    const reserve = await req.userStore.createReserve({ amount: amountCentavos, label });
     return res.status(201).json(serializeMoneyFields(reserve, ['amount']));
   }));
 
@@ -617,7 +631,7 @@ function createApp({ persistenceStore } = {}) {
     if (req.body.confirm !== true) {
       return res.status(400).json({ error: 'Account archive requires explicit confirmation.' });
     }
-    const account = await store.archiveAccount(req.params.id);
+    const account = await req.userStore.archiveAccount(req.params.id);
     if (!account) {
       return res.status(404).json({ error: 'Account not found.' });
     }
@@ -636,7 +650,7 @@ function createApp({ persistenceStore } = {}) {
     if (targetAmountCentavos === null || targetAmountCentavos < 0) {
       return res.status(400).json({ error: 'Override target must be non-negative and have no more than two decimal places.' });
     }
-    const override = await store.upsertDailyOverride({
+    const override = await req.userStore.upsertDailyOverride({
       date,
       targetAmount: targetAmountCentavos,
       reason: reason || ''
@@ -646,19 +660,19 @@ function createApp({ persistenceStore } = {}) {
 
   app.get('/api/daily-limits/override', asyncRoute(async (req, res) => {
     if (!req.query.date) {
-      return res.json((await store.listDailyOverrides()).map(serializeDailyOverride));
+      return res.json((await req.userStore.listDailyOverrides()).map(serializeDailyOverride));
     }
     if (!isDateKey(req.query.date)) {
       return res.status(400).json({ error: 'Date must be a valid ISO date.' });
     }
-    return res.json(serializeDailyOverride(await store.getDailyOverride(req.query.date)));
+    return res.json(serializeDailyOverride(await req.userStore.getDailyOverride(req.query.date)));
   }));
 
   app.get('/api/planning/payday', asyncRoute(async (req, res) => {
     if (req.query.nextExpectedPayday && !isDateKey(req.query.nextExpectedPayday)) {
       return res.status(400).json({ error: 'Next expected payday must be a valid ISO date.' });
     }
-    const [accounts, reserves] = await Promise.all([store.listAccounts(), store.listReserves()]);
+    const [accounts, reserves] = await Promise.all([req.userStore.listAccounts(), req.userStore.listReserves()]);
     const accountsTotal = accounts.filter((account) => !account.archived)
       .reduce((total, account) => total + Number(account.balance || 0), 0);
     const reserveTotal = reserves.reduce((total, reserve) => total + Number(reserve.amount || 0), 0);
@@ -689,10 +703,10 @@ function createApp({ persistenceStore } = {}) {
     if (targetMonth !== targetDate.slice(0, 7)) {
       return res.status(400).json({ error: 'Budget month must match the target date month.' });
     }
-    const budget = await store.getBudget(targetMonth);
+    const budget = await req.userStore.getBudget(targetMonth);
     const result = getDailyTargetForDate(budget, targetDate, targetMonth);
-    const override = await store.getDailyOverride(targetDate);
-    const spending = (await store.listTransactions())
+    const override = await req.userStore.getDailyOverride(targetDate);
+    const spending = (await req.userStore.listTransactions())
       .filter((transaction) => transaction.type === 'expense' && getDateKeyForTransaction(transaction.occurredAt) === targetDate)
       .reduce((total, transaction) => total + transaction.amount, 0);
     const amount = override ? override.targetAmount : result.amount;
@@ -725,6 +739,9 @@ function createApp({ persistenceStore } = {}) {
     if (res.headersSent) {
       return next(error);
     }
+    if (error.name === 'AccessError') {
+      return res.status(error.status).json({ error: error.message });
+    }
     if (error instanceof SyntaxError && error.status === 400 && 'body' in error) {
       return res.status(400).json({ error: 'Request body must contain valid JSON.' });
     }
@@ -746,6 +763,10 @@ function createApp({ persistenceStore } = {}) {
 }
 
 async function startServer() {
+  if (!process.env.SESSION_SECRET || Buffer.byteLength(process.env.SESSION_SECRET) < 32) {
+    console.error('Authentication startup failed: configure a private SESSION_SECRET of at least 32 bytes.');
+    throw new Error('Configure SESSION_SECRET with at least 32 bytes before starting the server.');
+  }
   const mongoUri = process.env.MONGODB_URI;
   if (!mongoUri) {
     console.error('Database startup failed: configure MONGODB_URI in the server environment.');

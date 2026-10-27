@@ -2,15 +2,31 @@
 
 ## Product Requirements Document
 
-**Version:** 2.1
+**Version:** 2.2
 **Status:** Revised product specification
-**Updated:** October 7, 2026
+**Updated:** October 27, 2026
 **Audience:** Product owner, implementation team, and coding agents
 **Supersedes:** The original `PRD.md` as the product direction; `REVISION.md` and `BUGS_AND_FEATURES.md` remain implementation references until their open items are closed.
 
 ---
 
 ## 0. Implementation Agent Instructions
+
+### October 27 approved scope addendum: Admin/User
+
+The product owner approved the decisions in [ADMIN_USER_PLAN.md](ADMIN_USER_PLAN.md) and requested implementation on October 27. This addendum supersedes this document's earlier exclusion of authentication and multi-user accounts only for that defined scope. It specifies required behavior, not completed functionality. Other financial requirements remain unchanged.
+
+- One product-owner Admin manages account requests, creates/invites Users, disables/enables access, and reviews management audit events. There is no web role-promotion or permanent user-deletion capability.
+- The Admin identity cannot access finance, planning, reports, or Career workspaces/data. The owner uses a distinct personal User identity for existing financial and Career records.
+- Every User's accounts, transactions, budgets, reserves, daily overrides, and Career records are private to that User. Enforce ownership on the server, including aggregates, reports, referenced accounts, and owner-scoped upserts/indexes. RBAC alone does not establish isolation.
+- Visitors may request an account using name, email, and optional reason. Admin approval or direct account creation produces a pending User; a valid, expiring, single-use activation invitation lets the recipient choose their password. No automatic public registration or caller-selected roles.
+- Email/password login uses server-managed sessions. Disabling access immediately invalidates sessions and blocks login while preserving records; re-enabling does not revive sessions.
+- Record access-management actions without passwords, tokens, credentials, or private business content. Never grant Admin implicit access to User records.
+- Email invitation delivery is the final feature. Google sign-in and password recovery are deferred. No temporary public activation/password bypass may replace email during development.
+- Localhost is the initial runtime; Vercel is future deployment work. Verification must select the dedicated test database before importing the app. Production data migration, pushes, and deployment remain separate operations.
+- Migrate legacy records only to the explicitly designated personal User after backup, dry run, and preservation checks. No ambiguous assignment to the Admin or a guessed User.
+
+Phase 1 implementation covers documentation alignment, [ownership inventory](ADMIN_USER_OWNERSHIP_INVENTORY.md), test-only identity fixtures, and safe test commands. Ownership and authentication must ship together before multi-user access is enabled. Phase 1 completion does not imply login or RBAC exists.
 
 This document is the source of truth for the requested product behavior and release requirements.
 
@@ -149,8 +165,8 @@ A single person who wants to track day-to-day income and expenses, manage multip
 * Cryptocurrency tracking.
 * Full accounting ledgers.
 * Financial advice.
-* Authentication.
-* Multi-user accounts.
+* Authentication beyond the approved Admin/User addendum (for example, Google sign-in and password recovery).
+* Multi-user features beyond separate private User workspaces (for example, shared workspaces).
 * Organizations.
 * Enterprise permissions.
 * Native mobile applications.

@@ -1,6 +1,53 @@
 # PFT working memory
 
-Last updated: **October 26, 2026, Asia/Manila**.
+Last updated: **October 27, 2026, Asia/Manila**.
+
+## October 27: end-of-day commit/push handoff
+
+- User explicitly authorized documenting, committing, and pushing today's Admin/User work to GitHub. This permission is for this operation only; no deployment or standing future push authorization.
+- Included scope: Phases 1-3 documentation, isolated test tooling, owner-scoped persistence, test-only migration rehearsal/runbook, authentication/session infrastructure, private test bootstrap, regressions, and the compatible dependency security patch.
+- Validation: full suite 73 passed with no failures/skips; focused Mongo authentication/filter/reconnect checks, lint, configuration checks, and whitespace checks subsequently passed. Production dependency audit reported zero known vulnerabilities.
+- Resume with **Phase 4 account requests, approval/rejection, pending Users, activation-token core, and audited management endpoints**. Browser login/dashboard remains Phase 5; email delivery remains last. Real personal provisioning, live migration, browser verification, and deployment have not occurred.
+- The commit/push is being finalized for this handoff; verify its resulting hash and remote status in Git. Earlier sections' uncommitted-status statements describe their original checkpoints.
+
+## October 27: Admin/User Phase 3 implementation complete
+
+- User requested continuing. Added `src/auth/` password hashing, bootstrap validation/service, Mongo identity repository, and session/authentication middleware. Added `express-session` and `connect-mongo`; Node scrypt uses independent salts and fixed bounded parameters. Auth sessions reuse the selected Mongo client, refresh their delegate after client replacement, and store transformed session IDs.
+- Added `/api/auth/csrf`, `/login`, `/me`, `/logout`. Real session identity resolution is now the default when `SESSION_SECRET` is configured. Business routes continue requiring an active User, reject Admin finance access, and require CSRF on writes. Explicit trusted identity injection remains a test factory capability, not a network impersonation mechanism.
+- Login rotates session ID/token, uses generic credential errors, checks current status/role/version, and applies shared Mongo throttles. Expiry, deletion, disable/re-enable, role changes, revocation, and logout invalidate sessions as tested. Cookies are HttpOnly/SameSite=Strict; production additionally requires Secure/HTTPS. Trusting proxy headers is not automatic and remains a deployment decision.
+- Added `scripts/bootstrap-test.js` / `npm run bootstrap:test -- --target test [--apply]`. Private JSON arrives via stdin; default is offline input-only dry run. Apply selects only the dedicated test connection and `pft_test_local`, transactionally creates the sole Admin and separate personal User, bootstrap marker, and audit event. Reruns preserve IDs/passwords/roles/names/status; live targets are refused. No finance ownership migration is triggered.
+- Added `.gitignore` protection for `*.bootstrap.local.json`, configuration comments in `.env.example`, and [AUTHENTICATION_SETUP.md](AUTHENTICATION_SETUP.md). Actual `.env` values were not read out, printed, or modified. Server startup requires a private session secret; tests inject a synthetic one. Browser login/dashboard/CSRF wiring remains Phase 5; do not claim interactive browser login works yet.
+- **No real personal identities were provisioned.** Synthetic bootstrap/login/session tests used temporary test databases and cleaned them up. The owner's email/password setup should be supplied privately at actual setup time, outside source/history/chat; there is no default password or password-recovery bypass.
+- `npm.cmd run validate`: PASS, **73 tests, zero failures/skips**, including real Mongo auth/session/bootstrap/throttling, ownership/migration, and restart checks. Subsequent focused Mongo authentication rechecks passed after scalar identity-filter hardening and session-client reconnect recovery changes. Final lint, five configuration checks, and `git diff --check` passed.
+- Dependency installation reported a body-parser advisory. Applied its compatible transitive patch; final `npm.cmd audit --omit=dev --json` reports **zero known vulnerabilities**. No broad dependency upgrade or unrelated architectural change was performed.
+- Internal status/revocation helpers are trusted services with scalar-ID validation, not public management endpoints. Phase 4 must add audited Admin authorization around status changes; no requests/approval/activation/Admin-management UI is implemented yet.
+- No interactive browser verification, live database access/migration/provisioning, commit, push, or deployment. Phases 1-3 remain local/uncommitted. Next: Phase 4 account requests, pending User creation, approval/rejection, single-use activation tokens, and audited management operations. Email stays last; Google sign-in/password recovery remain deferred.
+
+## October 27: Admin/User Phase 2 complete locally
+
+- User requested continuing the plan. Implemented immutable required `userId` across all ten business schemas and owner-scoped Mongo/memory repositories, account-reference checks, per-owner budgets/overrides/probation, report/planning source isolation, and owner-leading indexes.
+- Root stores now expose business methods only through `forUser(trustedActiveUserIdentity)`; unscoped operations, Admin/pending/disabled identities, ownership/role/primary-key payloads, update operators, and foreign account references fail closed. Legacy ownerless records are not implicitly assigned on read.
+- Every business API uses a per-request scoped store. `createApp` accepts a trusted server-side `resolveIdentity` callback, defaulting to no identity. There is no impersonation header, public fixture route, or default owner. **Normal browser business APIs now return 401 until Phase 3 supplies real session authentication.** Health/readiness/static shell remain available. Admin finance access is denied.
+- Existing HTTP tests explicitly inject trusted fixture identities; direct repository assertions and the real restart worker use matching scoped stores. This does not implement login, identity persistence, session revocation, or a user-facing Admin panel.
+- Added `src/migrations/test-ownership.js`, synthetic legacy fixtures, shared Mongo/memory ownership contracts, and migration/HTTP regressions. The migration module only accepts isolated `pft_test_*` database names. Dry run snapshots all ten collections; explicit personal User mapping preserves existing owners, rejects orphans/cross-owner references/uniqueness conflicts, transactionally backfills missing/null owners, builds new indexes before dropping old global month/date uniqueness, and supports idempotent reruns plus drift-checked rollback of records/indexes.
+- [OWNERSHIP_MIGRATION_RUNBOOK.md](OWNERSHIP_MIGRATION_RUNBOOK.md) documents the rehearsal, in-memory test-backup limitation, separate index DDL failure handling, stopped-writer requirement, and future durable backup/live-migration gate. No live migration command was added. Real target identity validation/provisioning and a durable production backup remain future steps.
+- Four ownership tests reproduced the previously permissive behavior before implementation. Final `npm.cmd run validate`: **PASS, 67 tests, zero failures/skips**. Real Mongo checks passed isolation/reconnect, ownerless-record hiding, owner-scoped unique constraints, dry run, migration preservation, pre-apply drift refusal, index replacement, rerun, rollback, rollback drift refusal, restart persistence, and temporary-database cleanup.
+- Fixed a centavo-versus-peso expectation in the new reconnect test and shortened generated test database names to fit the tested Atlas limit. Five focused configuration checks and final lint/`git diff --check` also passed after the documentation/test-server log update.
+- No interactive browser smoke test, production access, `.env` change, real account provisioning, commit, push, or deployment performed. Phase 1 and Phase 2 changes are local and uncommitted; the previous push authorization applied only to that earlier operation.
+- Next: Phase 3 controlled sole-Admin + separate personal User provisioning, password hashing, Mongo-backed sessions, CSRF/throttling, logout/revocation, and real identity resolution. Obtain private bootstrap identities/credentials only when needed; do not put them in documentation or logs. Keep email delivery last; Google sign-in and password recovery deferred.
+
+## October 27: Admin/User Phase 1 complete
+
+- User requested starting the Admin/User plan. Completed Phase 1: scoped PRD v2.2 addendum, future-integration scope alignment, and [ADMIN_USER_OWNERSHIP_INVENTORY.md](ADMIN_USER_OWNERSHIP_INVENTORY.md) covering 28 business endpoints, 21 business persistence methods, 10 collections, indexes, and singleton changes.
+- Added test-only identity descriptions in `tests/fixtures/identities.js` for Admin, User A, User B, pending User, and disabled User. They are not persisted identities, usable credentials, or an authentication bypass.
+- Added `src/config/test-environment.js`, `scripts/run-tests.js`, and `scripts/test-server.js`. `npm test`/`npm run validate` now require a dedicated test connection, replace all Mongo URI variables before child app imports, and refuse live fallback. `npm run test:unit` explicitly disables all Mongo URIs and skips only the real-Mongo restart check.
+- `npm run dev:test` binds to `127.0.0.1`, selects `pft_test_local` on the dedicated test connection before importing the app, and preserves synthetic browser data across shutdown. It never edits `.env`; it does not seed identities or migrate live data.
+- Corrected the restart worker's stale account fixture from unsupported type `Test` to supported `Other` so account validation and real-Mongo verification agree.
+- Final `npm.cmd run validate`: PASS, 57 tests, zero failures/skips, including real-Mongo restart and successful temporary-database cleanup. Network-enabled test connectivity worked today; earlier connectivity failures below are historical.
+- `npm.cmd run test:unit`: PASS, 56 passed and one explicitly skipped Mongo test. Five targeted configuration checks passed, including both entrypoints refusing missing test configuration even with a live URI present.
+- Localhost test server smoke: readiness, health, and UI shell passed via HTTP against the dedicated test connection; server stopped afterward. This was not an interactive browser smoke test.
+- `git diff --check` passed. No production access, live migration, credential changes, commit, push, or deployment performed.
+- Next: Phase 2 owner-scoped persistence and isolated migration rehearsal. Ownership/authentication remain a combined release gate; login and RBAC are not implemented yet. Email remains last; Google login and password recovery remain deferred.
 
 ## October 26: commit/push handoff
 
@@ -56,8 +103,8 @@ This is a repository handoff for future GPT/Codex sessions. Read it alongside th
 
 - Product: Pocket Ledger / Personal Finance Tracker (PFT), currently a single-user application.
 - Stack: Node.js, Express, MongoDB/Mongoose, vanilla HTML/CSS/JavaScript.
-- `PRD_v2.md` is the product source of truth. The file currently identifies itself as version 2.1.
-- The active future-integration phase is MongoDB persistence. Authentication, ownership, multi-user support, and RBAC require a separate scope decision.
+- `PRD_v2.md` is the product source of truth, now version 2.2 with the approved Admin/User addendum.
+- Admin/User implementation is approved under `ADMIN_USER_PLAN.md`. Phases 1-3 are implemented locally and verified with synthetic identities; Phase 4 management/activation is next. Ownership, session authentication, and role/status enforcement exist. Actual private provisioning, browser login/dashboard, and live rollout are not complete.
 - Do not introduce allocation automation, transfers, a frontend framework, or unrelated architectural rewrites during stabilization.
 - Keep actual transactions separate from budgets, reserves, daily targets, and expected income.
 

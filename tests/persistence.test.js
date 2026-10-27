@@ -3,11 +3,12 @@ const assert = require('node:assert/strict');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const request = require('supertest');
-const { createApp } = require('../server');
+const { createTestApp } = require('./app-helper');
+const { createIdentityFixtures } = require('./fixtures/identities');
 const { createInMemoryPersistenceStore, createPersistenceStore, mongoose } = require('../src/persistence');
 
 test('API returns unavailable rather than falling back when MongoDB is not configured', async () => {
-  const app = createApp({ persistenceStore: createPersistenceStore({ mongoUri: null }) });
+  const app = createTestApp({ persistenceStore: createPersistenceStore({ mongoUri: null }) });
 
   const readyResponse = await request(app).get('/ready');
   assert.equal(readyResponse.status, 503);
@@ -18,8 +19,9 @@ test('API returns unavailable rather than falling back when MongoDB is not confi
 });
 
 test('peso API amounts are persisted as integer centavos', async () => {
-  const store = createInMemoryPersistenceStore();
-  const app = createApp({ persistenceStore: store });
+  const root = createInMemoryPersistenceStore();
+  const store = root.forUser(createIdentityFixtures().userA);
+  const app = createTestApp({ persistenceStore: root });
 
   const badAccount = await request(app)
     .post('/api/accounts')
@@ -69,7 +71,7 @@ test('peso API amounts are persisted as integer centavos', async () => {
 });
 
 test('malformed account and transaction IDs return not found', async () => {
-  const app = createApp({ persistenceStore: createInMemoryPersistenceStore() });
+  const app = createTestApp({ persistenceStore: createInMemoryPersistenceStore() });
 
   const account = await request(app)
     .post('/api/accounts/not-a-real-id/archive')
@@ -81,8 +83,9 @@ test('malformed account and transaction IDs return not found', async () => {
 });
 
 test('planning values preserve peso responses while calculations use centavos', async () => {
-  const store = createInMemoryPersistenceStore();
-  const app = createApp({ persistenceStore: store });
+  const root = createInMemoryPersistenceStore();
+  const store = root.forUser(createIdentityFixtures().userA);
+  const app = createTestApp({ persistenceStore: root });
 
   const budget = await request(app)
     .post('/api/budgets')

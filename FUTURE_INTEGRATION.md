@@ -6,6 +6,18 @@
 **Status:** Ready for implementation of Phase 1 only
 **Product:** Pocket Ledger (PFT)
 
+## October 27 scope update
+
+The product owner has activated the Admin/User work described in [ADMIN_USER_PLAN.md](ADMIN_USER_PLAN.md), with the scoped addendum in [PRD_v2.md](PRD_v2.md). The original persistence-only scope and statements that authentication is entirely future work below are historical and are superseded only for this approved work. Implementation begins with the Admin/User plan's Phase 1 (documentation, ownership inventory, identity fixtures, and isolated test setup); these phase numbers differ from this guide's original persistence/authentication/RBAC phases.
+
+The new decision also supersedes the old permission table allowing Admins their own financial workspace: the sole Admin has management access only and no finance/planning/Career access. A separate personal User owns the product owner's records. Other Users' private records are never available to Admin. Email delivery is last; Google sign-in and password recovery remain deferred. Account requests require Admin approval, and there is no open automatic registration.
+
+See [ADMIN_USER_OWNERSHIP_INVENTORY.md](ADMIN_USER_OWNERSHIP_INVENTORY.md) for the original route/repository/index baseline and the status update below for implemented scope. Existing production migration and deployment gates continue to apply.
+
+Phase 2 status update: owner-scoped persistence and the isolated migration rehearsal are now implemented locally. Authentication/session handling is still pending; default business APIs deny unauthenticated access. The [migration runbook](OWNERSHIP_MIGRATION_RUNBOOK.md) documents the tested boundary and the separate live-migration gate.
+
+Phase 3 status update: email/password authentication APIs, Mongo sessions, CSRF/origin checks, revocation/expiry, shared throttles, and a controlled test-only bootstrap are now implemented. See [AUTHENTICATION_SETUP.md](AUTHENTICATION_SETUP.md). Only synthetic provisioning was tested; private personal setup, account management, activation/email, browser workflows, and live rollout are not complete.
+
 ---
 
 # 0. Implementation Agent Instructions

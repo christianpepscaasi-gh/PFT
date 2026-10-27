@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const request = require('supertest');
 const { createTestApp } = require('./app-helper');
+const { createIdentityFixtures } = require('./fixtures/identities');
 
 async function fixture(app, entries) {
   const account = await request(app).post('/api/accounts')
@@ -28,7 +29,7 @@ test('future salary is absent from every actual-income report without deleting t
     { amount: 1.01, type: 'expense', category: 'Food', occurredAt: '2026-10-20T11:00:00+08:00' },
     { amount: 20.02, occurredAt: '2026-10-21T00:00:00+08:00' }
   ]);
-  assert.equal((await app.locals.persistenceStore.getTransaction(ids[3])).amount, 2002);
+  assert.equal((await app.locals.persistenceStore.forUser(createIdentityFixtures().userA).getTransaction(ids[3])).amount, 2002);
   assert.equal((await request(app).get('/api/transactions')).body.length, 4);
 
   const overview = await request(app).get('/api/overview?month=2026-10');
