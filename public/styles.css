@@ -12,6 +12,40 @@
   --shadow: 0 10px 28px rgba(23, 43, 58, 0.055);
 }
 
+.user-workspace { display: contents; }
+.session-controls { display: flex; align-items: center; gap: .75rem; flex-wrap: wrap; color: var(--muted); }
+.auth-panel { grid-column: 1 / -1; width: min(100%, 520px); justify-self: center; margin: 2rem 0; }
+.auth-form { display: grid; gap: 1rem; }
+.auth-form label { display: grid; gap: .35rem; }
+.auth-form input, .auth-form textarea, .admin-toolbar select { width: 100%; min-height: 44px; padding: .7rem; border: 1px solid var(--border); border-radius: 8px; background: white; }
+.admin-panel { grid-column: 1 / -1; }
+.admin-tabs, .admin-toolbar, .admin-pagination, .admin-record-actions { display: flex; gap: .75rem; flex-wrap: wrap; align-items: center; margin: 1rem 0; }
+.admin-tabs [aria-current="page"] { background: var(--primary); color: white; }
+.admin-create { padding: 1rem; background: var(--bg); border-radius: 10px; margin: 1rem 0; max-width: 560px; }
+.admin-list { display: grid; gap: .75rem; }
+.admin-list { min-width: 0; }
+.users-table-container { max-width: 100%; overflow-x: auto; border: 1px solid var(--border); border-radius: 12px; background: white; }
+.users-table { width: 100%; min-width: 920px; border-collapse: collapse; text-align: left; font-size: .9rem; }
+.users-table caption { text-align: left; padding: 1rem; font-weight: 700; }
+.users-table th { background: var(--bg); color: var(--muted); font-size: .8rem; }
+.users-table th, .users-table td { padding: .65rem .85rem; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.users-table .admin-record { border: 0; border-radius: 0; padding: 0; }
+.users-table tbody tr:last-child td { border-bottom: 0; }
+.users-table tbody tr:hover { background: var(--bg); }
+.users-table td:first-child { font-weight: 600; }
+.users-table td:nth-child(3), .users-table td:nth-child(4) { white-space: nowrap; }
+.users-table .admin-record-actions { flex-wrap: nowrap; margin: 0; gap: .5rem; }
+.users-table button { white-space: nowrap; min-height: 36px; padding: .4rem .65rem; font-size: .8rem; }
+.users-table .admin-record .status-badge { margin: 0; text-transform: capitalize; }
+.users-table .status-badge[data-status="active"] { background: #dcfce7; color: #166534; }
+.users-table .status-badge[data-status="pending"] { background: #fef3c7; color: #92400e; }
+.users-table .status-badge[data-status="disabled"] { background: #e5e7eb; color: #374151; }
+@media (max-width: 700px) { .users-table button { min-height: 44px; } }
+.admin-record { padding: 1rem; border: 1px solid var(--border); border-radius: 10px; overflow-wrap: anywhere; }
+.admin-record p { margin: .4rem 0; white-space: pre-wrap; }
+.admin-record .status-badge { display: inline-block; margin-left: .5rem; padding: .15rem .5rem; border-radius: 12px; background: var(--bg); font-size: .85rem; }
+.admin-pagination { justify-content: flex-end; }
+
 * {
   box-sizing: border-box;
 }

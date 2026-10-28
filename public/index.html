@@ -15,7 +15,7 @@
           <span class="brand-name">Pocket Ledger</span>
         </span>
       </a>
-      <div class="topbar-actions">
+      <div id="user-navigation" class="topbar-actions" hidden>
         <nav class="view-tabs" aria-label="Main views">
           <button class="tab-button active" data-view="overview" aria-controls="overview-view" aria-current="page" type="button">Overview</button>
           <button class="tab-button" data-view="reports" aria-controls="reports-view" type="button">Reports</button>
@@ -24,10 +24,73 @@
         </nav>
         <button id="quick-entry-button" class="primary-button" type="button">Quick Entry</button>
       </div>
+      <div class="session-controls">
+        <span id="session-label" role="status">Checking session…</span>
+        <button id="logout-button" class="secondary-button" type="button" hidden>Sign out</button>
+      </div>
     </header>
 
     <main class="layout">
       <div id="app-message" class="error-message" role="alert" tabindex="-1" hidden></div>
+      <section id="auth-view" class="panel auth-panel">
+        <p class="eyebrow">Your private workspace</p>
+        <h1 id="auth-heading">Welcome to Pocket Ledger</h1>
+        <p id="auth-notice" class="helper-text" role="status">Checking your session…</p>
+        <p id="auth-error" class="error-message" role="alert" hidden></p>
+        <form id="login-form" class="auth-form" hidden>
+          <label><span>Email</span><input id="login-email" type="email" autocomplete="username" maxlength="254" required /></label>
+          <label><span>Password</span><input id="login-password" type="password" autocomplete="current-password" maxlength="128" required /></label>
+          <button type="submit" class="primary-button">Sign in</button>
+          <button id="show-request-button" type="button" class="secondary-button">Request an account</button>
+          <p class="helper-text">Password recovery isn't available yet. Keep your sign-in details safe.</p>
+        </form>
+        <form id="request-account-form" class="auth-form" hidden>
+          <label><span>Your name</span><input id="request-name" autocomplete="name" maxlength="80" required /></label>
+          <label><span>Email</span><input id="request-email" type="email" autocomplete="email" maxlength="254" required /></label>
+          <label><span>Reason (optional)</span><textarea id="request-reason" maxlength="1000" rows="3"></textarea></label>
+          <button type="submit" class="primary-button">Send request</button>
+          <button class="secondary-button" type="button" data-sign-in>Back to sign in</button>
+        </form>
+        <form id="activation-form" class="auth-form" hidden>
+          <label><span>Choose a password</span><input id="activation-password" type="password" autocomplete="new-password" minlength="12" maxlength="128" required /></label>
+          <label><span>Confirm password</span><input id="activation-confirm" type="password" autocomplete="new-password" minlength="12" maxlength="128" required /></label>
+          <button id="activate-button" type="submit" class="primary-button">Activate account</button>
+          <button class="secondary-button" type="button" data-sign-in>Back to sign in</button>
+        </form>
+      </section>
+
+      <section id="admin-workspace" class="panel admin-panel" hidden>
+        <div class="section-heading">
+          <div><p class="eyebrow">Administrator</p><h1>Account management</h1><p class="helper-text">Manage access. Personal ledgers and Career records stay private.</p></div>
+          <button id="admin-refresh" type="button" class="secondary-button">Refresh</button>
+        </div>
+        <p class="helper-text">Invitation delivery isn't available yet. Invited accounts stay pending until the recipient can activate them.</p>
+        <p id="admin-message" role="status" hidden></p>
+        <p id="admin-error" class="error-message" role="alert" hidden></p>
+        <nav class="admin-tabs" aria-label="Account management views">
+          <button type="button" class="secondary-button" data-admin-view="requests" aria-current="page">Requests</button>
+          <button type="button" class="secondary-button" data-admin-view="users">Users</button>
+          <button type="button" class="secondary-button" data-admin-view="audit">Audit history</button>
+        </nav>
+        <form id="admin-create-form" class="auth-form admin-create" hidden>
+          <h2>Invite a User</h2>
+          <label><span>Name</span><input id="admin-user-name" maxlength="80" autocomplete="off" required /></label>
+          <label><span>Email</span><input id="admin-user-email" type="email" maxlength="254" autocomplete="off" required /></label>
+          <button type="submit" class="primary-button">Create pending User</button>
+        </form>
+        <div class="admin-toolbar">
+          <label id="admin-sort-label" hidden><span>Sort by</span><select id="admin-sort"><option value="createdAt:desc">Newest accounts</option><option value="createdAt:asc">Oldest accounts</option><option value="name:asc">Name (A–Z)</option><option value="name:desc">Name (Z–A)</option><option value="email:asc">Email (A–Z)</option><option value="status:asc">Status (A–Z)</option></select></label>
+          <label id="admin-filter-label"><span>Status</span><select id="admin-filter"><option value="">All statuses</option><option value="pending">Pending</option><option value="approved">Approved</option><option value="rejected">Rejected</option></select></label>
+          <span id="admin-page-label" role="status">Page 1</span>
+        </div>
+        <div id="admin-list" class="admin-list" aria-live="polite"></div>
+        <div class="admin-pagination">
+          <button id="admin-previous" type="button" class="secondary-button" disabled>Previous</button>
+          <button id="admin-next" type="button" class="secondary-button" disabled>Next</button>
+        </div>
+      </section>
+
+      <div id="user-workspace" class="user-workspace" hidden>
       <section id="overview-view" class="panel summary-panel view-panel active" data-view-panel="overview">
         <div class="section-heading overview-heading">
           <div>
@@ -113,7 +176,7 @@
         <div id="transaction-list" class="transaction-list" aria-live="polite"></div>
       </section>
 
-      <section id="reports-view" class="panel view-panel" data-view-panel="reports">
+      <section id="reports-view" class="panel view-panel" data-view-panel="reports" hidden>
         <div class="section-heading">
           <div>
             <p class="eyebrow">Your activity at a glance</p>
@@ -142,7 +205,7 @@
         <div id="report-transaction-list" class="transaction-list"></div>
       </section>
 
-      <section id="planning-view" class="panel view-panel" data-view-panel="planning">
+      <section id="planning-view" class="panel view-panel" data-view-panel="planning" hidden>
         <div class="section-heading">
           <div>
             <p class="eyebrow">Make a plan that works for you</p>
@@ -221,7 +284,7 @@
         <p id="daily-progress" class="summary-note" role="status">Daily spending unavailable.</p>
       </section>
 
-      <section id="career-view" class="panel view-panel" data-view-panel="career">
+      <section id="career-view" class="panel view-panel" data-view-panel="career" hidden>
         <div class="section-heading">
           <div>
             <p class="eyebrow">Optional personal growth tools</p>
@@ -365,6 +428,7 @@
           </div>
         </div>
       </section>
+      </div>
     </main>
 
     <dialog id="quick-entry-modal">
@@ -430,6 +494,7 @@
       </form>
     </dialog>
 
+    <script src="/session-ui.js"></script>
     <script src="/app.js"></script>
   </body>
 </html>

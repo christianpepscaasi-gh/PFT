@@ -21,4 +21,8 @@ test('serves the overview UI shell at the root path', async () => {
   assert.match(response.text, /Planning/i);
   assert.match(response.text, /Monthly Budget/i);
   assert.match(response.text, /Reserve/i);
+  assert.match(response.text, /id="user-workspace"[^>]*hidden/);
+  assert.match(response.text, /id="admin-workspace"[^>]*hidden/);
+  assert.match(response.text, /id="login-form"[^>]*hidden/);
+  assert.ok(response.text.indexOf('/session-ui.js') < response.text.indexOf('/app.js'));
 });

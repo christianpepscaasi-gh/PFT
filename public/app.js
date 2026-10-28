@@ -1,7 +1,7 @@
 async function checkedFetch(url, options) {
   let response;
-  try { response = await fetch(url, options); }
-  catch { throw new Error('Unable to reach the server. Check your connection and try again.'); }
+  try { response = await (typeof window !== 'undefined' && window.PftSession ? window.PftSession.fetch(url, options) : fetch(url, options)); }
+  catch (error) { if (error.name === 'AbortError') throw error; throw new Error('Unable to reach the server. Check your connection and try again.'); }
   if (!response.ok) {
     let message = 'The request could not be completed. Please try again.';
     try { message = (await response.json()).error || message; } catch { /* Use a stable fallback. */ }
@@ -10,7 +10,12 @@ async function checkedFetch(url, options) {
   return response;
 }
 
+function userContextGuard() {
+  return typeof window !== 'undefined' && window.PftSession ? window.PftSession.userGuard() : () => true;
+}
+
 function showError(error) {
+  if (error.name === 'AbortError') return;
   const message = document.getElementById('app-message');
   message.textContent = error.message || 'The request could not be completed.';
   message.hidden = false;
@@ -187,10 +192,11 @@ function renderReports(report) {
 }
 
 async function loadOverview() {
+  const current = userContextGuard();
   const currentMonth = state.month || getManilaDateTime().date.slice(0, 7);
   const response = await checkedFetch(`/api/overview?month=${encodeURIComponent(currentMonth)}`);
   const data = await response.json();
-
+  if (!current()) return;
   renderSummary(data);
   renderAccounts(data.accounts || []);
   state.accounts = data.accounts || [];
@@ -213,20 +219,25 @@ async function loadOverview() {
 }
 
 async function loadTransactions() {
+  const current = userContextGuard();
   const response = await checkedFetch('/api/transactions');
   const data = await response.json();
+  if (!current()) return;
   state.transactions = data;
   renderTransactions(data);
 }
 
 async function loadReports() {
+  const current = userContextGuard();
   const month = state.month || getManilaDateTime().date.slice(0, 7);
   const response = await checkedFetch(`/api/reports/period?period=month&start=${encodeURIComponent(`${month}-01`)}`);
   const data = await response.json();
+  if (!current()) return;
   renderReports(data);
 }
 
 async function updatePlanningSummary() {
+  const current = userContextGuard();
   const date = getManilaDateTime().date;
   const month = date.slice(0, 7);
   const summary = document.getElementById('planning-summary');
@@ -236,6 +247,7 @@ async function updatePlanningSummary() {
     checkedFetch(`/api/planning/daily-target?date=${encodeURIComponent(date)}&month=${encodeURIComponent(month)}`)
       .then((response) => response.json())
   ]);
+  if (!current()) return;
 
   const budget = Array.isArray(budgetResponse) ? budgetResponse.find((item) => item.month === month) : null;
   const target = dailyResponse && dailyResponse.amount != null ? dailyResponse : null;
@@ -321,6 +333,7 @@ function renderCareerData(data) {
 }
 
 async function loadCareerData() {
+  const current = userContextGuard();
   const [probation, checkpoints, skills, tasks, journal] = await Promise.all([
     checkedFetch('/api/career/probation').then((response) => response.json()),
     checkedFetch('/api/career/checkpoints').then((response) => response.json()),
@@ -328,11 +341,12 @@ async function loadCareerData() {
     checkedFetch('/api/career/tasks').then((response) => response.json()),
     checkedFetch('/api/career/journal').then((response) => response.json())
   ]);
-
+  if (!current()) return;
   renderCareerData({ probation, checkpoints, skills, tasks, journal });
 }
 
 async function loadAll() {
+  if (!userContextGuard()()) return;
   document.getElementById('budget-month').value ||= state.month || getManilaDateTime().date.slice(0, 7);
   await loadOverview();
   await loadTransactions();
@@ -618,15 +632,45 @@ document.getElementById('salary-month').addEventListener('change', async (event)
 
 setDefaultEntryDateTime();
 setDefaultCareerDates();
-window.addEventListener('DOMContentLoaded', () => {
+window.addEventListener('pft:user-ready', () => {
+  setDefaultEntryDateTime();
+  setDefaultCareerDates();
   loadAll().catch(showError);
 });
 
+window.addEventListener('pft:session-cleared', () => {
+  state.month = '';
+  state.accounts = [];
+  state.transactions = [];
+  state.editingTransaction = null;
+  state.originalOccurredAt = null;
+  renderSummary({});
+  renderAccounts([]);
+  renderTransactions([]);
+  renderReports({});
+  renderCareerData({});
+  document.getElementById('entry-account').replaceChildren();
+  for (const id of ['planning-summary', 'daily-progress']) document.getElementById(id).textContent = '';
+  document.getElementById('daily-progress').removeAttribute('data-state');
+  document.getElementById('entry-error').textContent = '';
+  document.getElementById('entry-error').hidden = true;
+  document.getElementById('account-form').classList.add('hidden');
+  document.querySelectorAll('[data-view-panel]').forEach((panel) => { panel.hidden = panel.dataset.viewPanel !== 'overview'; });
+  document.querySelectorAll('.view-panel').forEach((panel) => panel.classList.toggle('active', panel.id === 'overview-view'));
+  document.querySelectorAll('.tab-button').forEach((tab) => {
+    const active = tab.dataset.view === 'overview';
+    tab.classList.toggle('active', active);
+    if (active) tab.setAttribute('aria-current', 'page'); else tab.removeAttribute('aria-current');
+  });
+});
+
 async function loadDailyProgress() {
+  const current = userContextGuard();
   const input = document.getElementById('override-date');
   input.value ||= getManilaDateTime().date;
   const response = await checkedFetch('/api/planning/daily-target?date=' + encodeURIComponent(input.value));
   const data = await response.json();
+  if (!current()) return;
   const progress = document.getElementById('daily-progress');
   progress.dataset.state = data.spendingState;
   progress.textContent = data.amount == null
