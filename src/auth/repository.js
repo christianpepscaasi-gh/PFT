@@ -1,4 +1,5 @@
 const { mongoose } = require('../persistence');
+const { createManagementIndexes, createManagementRepository } = require('./management-repository');
 
 function createMongoIdentityRepository(root) {
   function requireId(id) {
@@ -13,11 +14,13 @@ function createMongoIdentityRepository(root) {
       await db.collection('users').createIndex({ role: 1 }, { unique: true, partialFilterExpression: { role: 'admin' }, name: 'single_admin' });
       await db.collection('auth_attempts').createIndex({ expires: 1 }, { expireAfterSeconds: 0 });
       await db.collection('auth_sessions').createIndex({ expires: 1 }, { expireAfterSeconds: 0 });
+      await createManagementIndexes(db);
     })().catch((error) => { ready = null; throw error; });
     await ready;
   }
   async function users() { await connect(); return mongoose.connection.db.collection('users'); }
   return {
+    ...createManagementRepository(connect),
     connect,
     async findByEmail(email) { return typeof email === 'string' ? (await users()).findOne({ email }) : null; },
     async findById(id) { return typeof id === 'string' ? (await users()).findOne({ _id: id }) : null; },

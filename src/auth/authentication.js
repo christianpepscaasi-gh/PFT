@@ -5,6 +5,8 @@ const { mongoose } = require('../persistence');
 const { normalizeEmail } = require('./bootstrap');
 const { hashPassword, verifyPassword } = require('./passwords');
 const { createMongoIdentityRepository } = require('./repository');
+const { createManagementService } = require('./management');
+const { installManagementRoutes } = require('./management-routes');
 
 const COOKIE_NAME = 'pft.sid';
 const SESSION_MS = 8 * 60 * 60 * 1000;
@@ -38,7 +40,7 @@ class LazyMongoSessionStore extends session.Store {
   touch(sid, value, callback) { this.ready().then((store) => store.touch(sid, value, callback), callback); }
 }
 
-function createAuthentication({ repository, sessionStore, secret, origin = 'http://127.0.0.1:3000', secure = false }) {
+function createAuthentication({ repository, sessionStore, secret, origin = 'http://127.0.0.1:3000', secure = false, managementService }) {
   if (typeof secret !== 'string' || Buffer.byteLength(secret) < 32) throw new Error('SESSION_SECRET must contain at least 32 bytes.');
   let configuredOrigin;
   try { configuredOrigin = new URL(origin); }
@@ -133,6 +135,8 @@ function createAuthentication({ repository, sessionStore, secret, origin = 'http
       res.clearCookie(COOKIE_NAME, cookie);
       res.json({ loggedOut: true });
     }));
+    installManagementRoutes(app, { repository, resolveIdentity, verifyCsrf, fingerprint,
+      service: managementService || createManagementService(repository) });
   }
   return { install, resolveIdentity, verifyCsrf, repository };
 }
