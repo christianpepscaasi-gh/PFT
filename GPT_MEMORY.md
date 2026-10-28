@@ -1,6 +1,63 @@
 # PFT working memory
 
-Last updated: **October 27, 2026, Asia/Manila**.
+Last updated: **October 28, 2026, Asia/Manila**.
+
+## October 28: End-of-session handoff
+
+- User explicitly authorized grouping today's work into task-based commits and pushing to `main`. This authorizes the current wrap-up, not a deployment or future pushes.
+- Prepared four groups: account-management/activation APIs and tests; session-aware User/Admin UI including compact sorted Users table; Edge browser verification tooling and compatible dependency patch; documentation and Vercel readiness notes.
+- Created task commits `379401a` (management APIs), `f41e40d` (User/Admin UI), and `65812bd` (browser verification). The final documentation commit contains this handoff; the wrap-up targets `origin/main` with a normal, non-force push.
+- Latest code verification remains 78/78 tests plus the real Edge journey, including Mongo sorting/pagination and mobile table behavior. Documentation edits passed whitespace review. `.env`, generated screenshots, and local preview fixtures remain excluded.
+- Resume after work or tomorrow with `VERCEL_READINESS.md`: Vercel runtime/proxy/session preparation, then a protected synthetic-data Preview after explicit deployment authorization. Email stays the last onboarding feature; no production deployment, real provisioning, or live migration has occurred.
+
+## October 28: Vercel readiness assessment
+
+- User requested readiness advice and notes, not deployment. Verdict: no production with real data yet; prepare a protected synthetic-data Preview next. Added `VERCEL_READINESS.md` with ordered runtime/proxy/session, isolated Preview, hosted verification, email, real provisioning/migration, and release steps.
+- Confirmed exported Express entry and public assets; no Express trusted-proxy setting exists. Secure production cookies and exact HTTPS origin need hosted validation. No Vercel deployment evidence exists.
+- Corrected outdated section 63 claims that authentication/ownership were absent. Current local 78-test and Edge evidence remains valid; no tests rerun for documentation-only edits. Consulted official Vercel Express/pool guidance. No deploy, credential changes, provisioning, live access, commit or push.
+
+## October 28: Compact Admin Users table
+
+- Replaced User cards with compact table rows inside a separate scrollable container: Name, Email, Created, Status, Actions. Added sort-by controls, status colors, and confirmed reissue/disable/enable actions. Mobile scrolling stays inside the table.
+- User API sorting applies across pages using validated field/direction and stable ID tie breakers. Opaque sorted cursors bind to sort/direction/status; existing unsorted ID pagination remains compatible.
+- Expanded shared memory/Mongo management checks for all sort fields/directions, complete pagination, and mismatched cursor rejection. Browser checks cover table headers, name sorting, and mobile overflow.
+- Final `npm.cmd run validate`: 78 passed, zero failures/skips. Final `npm.cmd run test:browser`: one real Edge journey passed; test database cleanup passed. Initial restricted-network attempts hit DNS timeouts; network-enabled checks passed. Updated `artifacts/browser/admin-desktop.png` and added `users-mobile.png` (ignored synthetic fixtures). An additional local memory-fixture Edge preview also passed.
+- Documentation updated; changes remain local. Email delivery still deferred.
+
+## October 28: Phase 5 browser workflows and Phase 6 local verification complete
+
+- User requested proceeding with the browser UI. Added `public/session-ui.js`, sign-in/request/activation forms, separate Admin dashboard, private initial HTML visibility, and styling consistent with the existing app. No frontend framework or bitmap assets added.
+- User identity alone triggers ledger/Career loading; Admin loads only management. Existing financial writes now share automatic CSRF transport. Admin has request review, pending creation, disable/enable/reissue, safe applicant text rendering, status filters, cursor pagination, and audit history. Access changes confirm first; failures retain inputs/restore controls without automatic write replay.
+- Activation enters through `/#activate=<token>`, removes the fragment into private memory, requires matching passwords, and returns to login after success. Existing signed-in people must sign out first. No token-copy shortcut, email transport, password reset, or public bypass was introduced.
+- Session handling clears forms, lists, balances, selectors, editing caches, warning state, Admin data, and dialogs on logout/loss/change. It checks visibility/60-second active-page intervals, cancels pending fetches, guards parsed responses and financial renders by generation, and clears before BFCache restoration. Logout handles already-removed server sessions without a stale-CSRF loop. No Web Storage is used for authentication/private state.
+- Added dev-only `playwright-core`, safe `scripts/run-browser-tests.js`, `npm run test:browser`, and `tests/browser/session.test.js`. It uses installed headless Edge (or explicit `PFT_BROWSER_EXECUTABLE`), synthetic identities, an isolated random test database, and cleanup. It does not use the real browser profile or modify `.env`.
+- Final `npm.cmd run validate`: **PASS, 78 tests, zero failures/skips**. Final `npm.cmd run test:browser`: **PASS**, one real end-to-end journey spanning both roles/two Users, finance create/edit/delete/archive with confirmations, Career writes, failed saves/actions, requests/approval/rejection, password setup, XSS text rendering, User management, pagination/filter reset, disable/re-enable, logout/expiry, delayed-response/account-switch privacy, and mobile overflow checks. No uncaught browser JS errors; test DB cleanup passed.
+- A timing-sensitive expiry assertion initially attempted to click an already-hidden Sign out button after automatic expiry cleanup. Corrected the test to accept either valid cleanup path while still asserting login visibility and no private DOM content. No product checks were skipped or weakened.
+- Inspected synthetic desktop/mobile screenshots under ignored `artifacts/browser/`. [BROWSER_WORKFLOWS.md](BROWSER_WORKFLOWS.md) records usage/evidence. The default API suite remains portable; real-browser verification is an explicit command requiring installed Edge/Chromium and the dedicated test connection.
+- Installation surfaced a transitive `qs` advisory; applied its compatible patch. Final `npm.cmd audit --omit=dev --json`: **zero known vulnerabilities**.
+- No real private account setup, production access/migration, email sends, commit, push, or deployment. Phase 4-6 changes remain local and uncommitted; no standing push permission exists.
+- Next: Phase 7 email provider/sender/domain/cost/credential decisions before implementing delivery. Google sign-in/password recovery stay deferred. Do not send real test email without recipient authorization or treat local verification as production rollout approval.
+
+## October 28: Atlas access restored; Phase 4 verified
+
+- User reported adding the development IP to Atlas access and requested another database check.
+- Reran `npm.cmd run validate` with network access using the existing safe dedicated-test wrapper. **PASS: 78 tests, zero failures or skips**, including Mongo authentication/sessions, Phase 4 concurrent requests/approvals/activation, atomic audit rollback, token privacy/indexes, reconnect, ownership/migration, restart persistence, and successful temporary-database cleanup.
+- Earlier TLS failures below are historical and are no longer the current blocker. Updated the plan, management guide, and related status docs accordingly. No code fixes were needed during this retry.
+- No assistant changes to network/TLS settings, credentials, `.env`, production data, real provisioning, commits, pushes, or deployment.
+- Next: Phase 5 browser login/request/activation forms and separate Admin dashboard with CSRF handling and session-aware navigation. Email stays last; Google sign-in/password recovery remain deferred.
+
+## October 28: Phase 4 APIs implemented; Mongo verification blocked
+
+- User requested implementing Phase 4. Added `src/auth/management.js`, `management-repository.js`, and `management-routes.js`, wired through the existing session middleware before the User-only business boundary. See [ACCOUNT_MANAGEMENT.md](ACCOUNT_MANAGEMENT.md) for ten new request/activation/Admin routes and their contracts.
+- Implemented generic public account requests, one pending request per normalized email, Admin lists/review, direct pending User creation, private invitation issuance/reissue, single-use password setup, confirmed enable/disable, and management audit listing. Admin authority is checked inside transactions; no finance/Career collections are queried by management.
+- Tokens use 32 random bytes, hash-only persistence, 24-hour expiry, consumption guards, and per-User invitation slots. HTTP never returns tokens/hashes. Controlled test wrappers capture committed private service issuance bundles; runtime discards them until the later delivery adapter exists. No public/manual token bypass or email transport was added.
+- State changes and required audit writes share Mongo transactions. Tests simulate audit failure during approval, User creation, invitation rotation, activation, and disable; the in-memory transaction contract proves rollback. Re-enabling an unactivated User returns pending; old sessions/tokens do not revive. Repeated creation cannot silently replace a missing invitation; explicit reissue is required. Unknown lifecycle states fail closed for review.
+- Added shared `tests/management-contract.js`, focused unit tests, a real-Mongo contract with unique-index/hash-persistence/reconnect checks, and a serialized snapshot/rollback adapter under `tests/auth-helper.js`. All use synthetic identities/data.
+- Reapplication decision subsequently confirmed by the user on October 28: allow another request after rejection, with rate limits. Implementation already matches and preserves review history; isolated as `allowReapply` in the service.
+- Current unit-only result: **73 passed, zero failures, five explicitly skipped Mongo checks (78 total)**. Final focused management result: four passed after the invitation-idempotence refinement. Lint and `git diff --check` passed.
+- Full `npm.cmd run validate` failed five Mongo checks, including existing auth/ownership/migration/restart checks, on test-cluster server selection. A separate network-enabled read-only driver ping reported `ERR_SSL_TLSV1_ALERT_INTERNAL_ERROR` on all three test nodes. Mongo correctness/concurrency/persistence and temporary-database cleanup are **not verified for Phase 4**. Do not mark this a full pass or bypass TLS/network controls.
+- User replied that they will check the test cluster's Atlas access. This is not confirmation that access is fixed: wait for an update before retrying the unchanged failing connection. Credentials, network/TLS settings, actual `.env`, and production data were not changed. No real users provisioned, messages sent, browser UI work, commit, push, or deployment.
+- Next: after test access is restored, rerun `npm.cmd run validate` and fix any actual Mongo contract failures; then proceed to Phase 5 browser login/request/activation and separate Admin dashboard/CSRF handling. Email remains last; Google sign-in/password recovery remain deferred.
 
 ## October 27: end-of-day commit/push handoff
 
@@ -104,7 +161,7 @@ This is a repository handoff for future GPT/Codex sessions. Read it alongside th
 - Product: Pocket Ledger / Personal Finance Tracker (PFT), currently a single-user application.
 - Stack: Node.js, Express, MongoDB/Mongoose, vanilla HTML/CSS/JavaScript.
 - `PRD_v2.md` is the product source of truth, now version 2.2 with the approved Admin/User addendum.
-- Admin/User implementation is approved under `ADMIN_USER_PLAN.md`. Phases 1-3 are implemented locally and verified with synthetic identities; Phase 4 management/activation is next. Ownership, session authentication, and role/status enforcement exist. Actual private provisioning, browser login/dashboard, and live rollout are not complete.
+- Admin/User implementation is approved under `ADMIN_USER_PLAN.md`. Phases 1-6 are implemented/locally verified with synthetic identities: 78 API/unit/Mongo tests and real Edge workflows passed October 28. Next is Phase 7 email-provider/sender decisions. Actual private provisioning, email delivery, and live rollout are not complete.
 - Do not introduce allocation automation, transfers, a frontend framework, or unrelated architectural rewrites during stabilization.
 - Keep actual transactions separate from budgets, reserves, daily targets, and expected income.
 

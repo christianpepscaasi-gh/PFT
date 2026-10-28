@@ -6,6 +6,8 @@ Phase 2 update, October 27: the ownership changes in this inventory are now impl
 
 Phase 3 update: the default resolver now uses Mongo-backed sessions and reloads current role/status/revocation version. `/api/auth/csrf`, `/login`, `/me`, and `/logout` are implemented as documented in [AUTHENTICATION_SETUP.md](AUTHENTICATION_SETUP.md). The CSRF/login endpoints are public but origin/token/throttle protected; `/me` requires a valid session and logout requires its CSRF token. New management/request/activation routes remain Phase 4 work. No public registration or role/owner assignment route exists.
 
+Phase 4 update: [ACCOUNT_MANAGEMENT.md](ACCOUNT_MANAGEMENT.md) inventories the ten added request/activation/Admin routes and their field projections. Public routes are CSRF/origin/throttle protected; Admin routes require current Admin sessions and confirmed writes, with authority rechecked inside transactions. Transaction access is restricted to users, account requests, invitations, and management audit events; it does not query finance/Career collections. Native Mongo verification passed after the owner updated test-cluster access (78 tests, zero failures/skips). There remains no role-promotion/deletion/public-registration endpoint.
+
 ## Current boundary
 
 There is no identity, session, authentication middleware, or owner field yet. `createApp` receives one persistence store; all business requests operate on global records. The `/api` middleware only connects/checks the database. The default app is constructed at module import; safe verification must replace live configuration before that import.

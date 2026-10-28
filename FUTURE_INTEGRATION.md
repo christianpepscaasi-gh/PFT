@@ -18,6 +18,10 @@ Phase 2 status update: owner-scoped persistence and the isolated migration rehea
 
 Phase 3 status update: email/password authentication APIs, Mongo sessions, CSRF/origin checks, revocation/expiry, shared throttles, and a controlled test-only bootstrap are now implemented. See [AUTHENTICATION_SETUP.md](AUTHENTICATION_SETUP.md). Only synthetic provisioning was tested; private personal setup, account management, activation/email, browser workflows, and live rollout are not complete.
 
+October 28 Phase 4 update: request/review, pending User creation, invitation-token core, audited status changes, and Admin lists are implemented locally. See [ACCOUNT_MANAGEMENT.md](ACCOUNT_MANAGEMENT.md). After the owner updated Atlas access, full validation passed all 78 tests with zero failures/skips, including real-Mongo management checks. Browser/email/private setup/live rollout remain pending.
+
+October 28 Phase 5/6 update: browser login/request/activation, separate User/Admin workspaces, CSRF transport, and privacy cleanup are implemented and verified in real headless Edge using synthetic Mongo data. Full API/Mongo validation and browser cleanup passed; see [BROWSER_WORKFLOWS.md](BROWSER_WORKFLOWS.md). Email-provider/sender decisions, private setup, live migration, and deployment remain separate pending work.
+
 ---
 
 # 0. Implementation Agent Instructions
@@ -2026,6 +2030,8 @@ Use this gate after Phase 1 MongoDB persistence is implemented and before connec
 
 **Assessment: NO-GO for production deployment with real financial data.**
 
+October 28 reassessment: authentication, ownership, and local browser verification are now implemented. The remaining hosting and real-data rollout work is summarized in [VERCEL_READINESS.md](VERCEL_READINESS.md). Prepare a protected synthetic-data Preview first; no hosted checks have passed yet.
+
 This assessment is based on the current repository state:
 
 | Check | Current state | Required before production GO |
@@ -2034,11 +2040,11 @@ This assessment is based on the current repository state:
 | Serverless entrypoint | `server.js` exports the Express app; `app.listen()` is only called when the file is run directly. Vercel's zero-configuration Express support recognizes an exported app from `server.js`. | Verify the detected Express Function and API routing on a Vercel Preview deployment; do not invoke `startServer()` from the Function. |
 | Static assets | Browser assets are under `public/`. Vercel serves these as static assets; `express.static()` is retained for local Express use and is not Vercel's static-file delivery mechanism. | Verify `/`, `/styles.css`, and `/app.js` from a Vercel Preview deployment with correct content types. |
 | Database lifecycle | A dedicated Mongo test URI connected successfully. The real-Mongo process-restart test passed. Local `/health` reports liveness while disconnected, `/ready` connects and reports readiness, and a Mongo-backed accounts read succeeded. | Verify warm/cold invocation reuse, cold-start behavior, and readiness failures against the Vercel Preview database. |
-| Access control | No authentication or user ownership exists; finance APIs are unauthenticated. | Before exposing real data publicly, add approved authentication and ownership controls, or enforce an explicitly approved private-access boundary outside the app. Never assume an obscure URL protects financial records. |
+| Access control | Authentication, Admin/User separation, and per-user ownership are implemented and locally verified. Production sessions use Secure cookies; Express proxy trust is not configured. | Verify the actual hosting proxy boundary, HTTPS cookies, exact origin/CSRF handling, role isolation, and revocation on Preview. |
 | Deployment access | No Vercel CLI, Vercel token, local Vercel project link, or Preview URL is available in this environment. | Install/authenticate the Vercel CLI or link the Git repository to a Vercel project, then configure Preview environment variables. |
 | Production verification | No Vercel deployment or live smoke-test evidence is recorded. | Deploy a Development/QA Preview and complete all release checks below; this is not production approval. |
 
-The current app may be used only as a disposable demo with non-sensitive test data until Preview persistence, runtime behavior, and an approved private-access boundary have been verified. A successful Mongo connection does not make the unauthenticated API private.
+Use only synthetic data for the first protected Preview until hosted persistence, session behavior, and access controls have been verified. A successful Mongo connection alone does not establish production readiness.
 
 ## 63.2 Phase 1 Vercel Checklist
 
@@ -2060,12 +2066,12 @@ Mark every item PASS with evidence before considering a Vercel deployment that s
 
 ## 63.3 Public Financial Data Access Gate
 
-Phase 1 provides persistence, not login or multi-user isolation. Since the current PRD excludes authentication, do not interpret a Phase 1 PASS as authorization to expose real financial data on a publicly accessible URL.
+The original Phase 1 supplied persistence only. Subsequent Admin/User phases now provide login and ownership isolation; local passing tests do not establish that these controls work behind the production proxy.
 
 Before Production GO, choose and document one approved access model:
 
 1. Keep the deployment private using an appropriate, verified Vercel access-protection policy for the target plan and environment; verify unauthenticated visitors cannot reach the application APIs.
-2. Approve and implement the future authentication/user-ownership phase before public access. If multiple users are allowed, every database query must enforce ownership. Add RBAC only after admin responsibilities and permissions are explicitly approved.
+2. Verify the implemented authentication/user-ownership controls on the hosted runtime before public access. Every business-data query must enforce ownership; Admin must remain excluded from financial/Career data.
 
 If neither boundary is in place, verdict remains **NO-GO for real financial data**, even if every Phase 1 persistence check passes.
 

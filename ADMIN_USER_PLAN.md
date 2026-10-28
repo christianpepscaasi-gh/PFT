@@ -2,7 +2,7 @@
 
 Date: October 26, 2026 (Asia/Manila)
 
-Status: Phases 1-3 implemented locally October 27, 2026; ownership, migration rehearsal, authentication APIs, sessions, and the test-only bootstrap command are verified. Real personal setup, account-request/activation management, browser login/dashboard, and email delivery remain pending. This document tracks the scope agreed in the Q&A. It does not authorize a production migration, push, or deployment.
+Status: Phases 1-6 implemented/locally verified through October 28, including Phase 5 browser workflows and Phase 6 API/Mongo/real-browser checks. Email delivery, real private setup, live migration, and deployment remain pending. This document tracks the scope agreed in the Q&A. It does not authorize a production migration, push, or deployment.
 
 ## 1. Agreed product decisions
 
@@ -118,32 +118,35 @@ Phases 2 and 3 are a combined release gate: neither may be enabled for real user
 
 ### Phase 4: account management and activation core
 
-- [ ] Add public request submission and generic acknowledgments.
-- [ ] Add Admin request listing, approval/rejection, direct User creation, and User listing.
-- [ ] Build activation-token issuance, expiry, reissue, consumption, and password setup without email transport yet.
-- [ ] Implement disable/enable, immediate session revocation, and required audit events.
-- [ ] Prevent Admin creation/promotion through requests, invitations, activation, or User management APIs.
-- [ ] Keep the sole Admin out of ordinary User disable controls to prevent accidental lockout.
+- [x] Add public request submission and generic acknowledgments.
+- [x] Add Admin request listing, approval/rejection, direct pending User creation, User listing, and management audit listing.
+- [x] Build activation-token issuance, 24-hour expiry, reissue, atomic single-use consumption, and password setup without email transport. No raw token is returned through HTTP; controlled tests capture private service issuance bundles.
+- [x] Implement disable/enable, session-version revocation, invitation invalidation, and audit writes coordinated transactionally with state changes.
+- [x] Prevent Admin creation/promotion through requests, invitations, activation, or User management APIs.
+- [x] Keep the sole Admin out of User lists/status controls and reject Admin targets at the service boundary.
+- [x] Complete Phase 4 real-Mongo concurrency/atomicity/persistence verification and temporary-database cleanup. After the owner updated Atlas access, full validation passed all 78 tests with no failures or skips; see [ACCOUNT_MANAGEMENT.md](ACCOUNT_MANAGEMENT.md).
+
+Reapplication decision confirmed October 28: allow another request after rejection, with rate limits and preserved review history. Implementation already matches. The owner updated Atlas access, and Mongo verification now passes.
 
 ### Phase 5: browser workflows
 
-- [ ] Add login, account request, and token-based password setup screens.
-- [ ] Show the finance workspace only for authenticated Users; show a separate management dashboard only for Admin.
-- [ ] Add request review, User creation, status management, and management audit history.
-- [ ] Confirm access-changing actions and display failure states without duplicate submissions.
-- [ ] Clear private content when sessions end and handle expired/disabled sessions consistently.
-- [ ] State that password recovery is unavailable; do not show a functioning-looking reset link.
+- [x] Add login, account request, and token-based password setup screens.
+- [x] Show the finance workspace only for authenticated Users; show a separate management dashboard only for Admin.
+- [x] Add request review, User creation, status management, and management audit history with filters/pagination and safe text rendering.
+- [x] Confirm access-changing actions and display failure states without duplicate submissions or automatic write replay.
+- [x] Clear private content when sessions end; handle expired/disabled sessions, cross-account switching, delayed responses, and back/forward caching.
+- [x] State that password recovery and invitation delivery are unavailable; no functioning-looking reset/token-copy workaround. See [BROWSER_WORKFLOWS.md](BROWSER_WORKFLOWS.md).
 
 ### Phase 6: verification before email integration
 
-- [ ] Test no cross-user access through IDs, filters, account reassignment, reports, aggregates, and every Career endpoint.
-- [ ] Test visitors cannot access private routes and Users cannot access management routes.
-- [ ] Test Admin cannot access finance/Career APIs, even when given a valid User resource ID.
-- [ ] Test role/owner injection, rejected/pending access, disabled-session revocation, logout, and CSRF failures.
-- [ ] Test duplicate requests, concurrent approvals, unique normalized emails, token expiry/replay/reissue, and failed audit writes.
-- [ ] Verify migration reruns, ownership/index integrity, Mongo restart persistence, and financial/date regressions using the isolated test connection.
-- [ ] Run real browser journeys for both roles and two distinct Users; mocked DOM tests alone do not satisfy this gate.
-- [ ] Run lint and the full required automated validation. Report connectivity failures explicitly; skipped persistence is not a complete pass.
+- [x] Test no cross-user access through IDs, filters, account reassignment, reports, aggregates, and every Career endpoint.
+- [x] Test visitors cannot access private routes and Users cannot access management routes.
+- [x] Test Admin cannot access finance/Career APIs, even when given a valid User resource ID.
+- [x] Test role/owner injection, rejected/pending access, disabled-session revocation, logout, and CSRF failures.
+- [x] Test duplicate requests, concurrent approvals, unique normalized emails, token expiry/replay/reissue, and failed audit writes.
+- [x] Verify migration reruns, ownership/index integrity, Mongo restart persistence, and financial/date regressions using the isolated test connection.
+- [x] Run real browser journeys for both roles and two distinct Users: headless Edge with native Mongo, including privacy races, UI failure handling, and mobile layout checks.
+- [x] Run lint and full validation: 78 passed, zero failures/skips; separate real-browser journey and cleanup passed. Production dependency audit is clear. No deployment approval is implied.
 
 ### Phase 7: email delivery — final feature
 
@@ -173,4 +176,4 @@ No production database access, migration, credential changes, push, or deploymen
 - Permanent deletion, retention policy, and request/audit-record retention periods. Decide retention before a public client launch.
 - Vercel deployment and any production rollout.
 
-Next implementation task: Phase 4 account requests, approval/rejection, pending User creation and activation-token core, plus audited Admin management/status changes. Phase 5 adds browser login/dashboard/CSRF handling. Real private setup and live migration remain separate; keep changes local until requested otherwise and do not deploy before the release gates pass.
+Next: obtain Phase 7 email provider/sender/cost/credential decisions before implementing the final delivery feature. Real private setup and live migration remain separate; keep changes local until requested otherwise and do not deploy before the release gates pass.

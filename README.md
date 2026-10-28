@@ -2,7 +2,7 @@
 
 Pocket Ledger is a personal finance tracker for recording income and expenses, reviewing account balances, and keeping budgets and spending plans separate from actual money. It also includes an optional career-progress area for probation dates, checkpoints, skills, tasks, and learning notes.
 
-> **Development status:** Normal application operations and sessions use MongoDB. Startup does not fall back to memory. Email/password authentication APIs and User ownership are implemented; browser login, Admin management, and actual personal setup are still pending. Production readiness requires reviewed provisioning/migration and the protected deployment checks in [FUTURE_INTEGRATION.md](FUTURE_INTEGRATION.md#63-vercel-deployment-readiness-gate).
+> **Development status:** Normal application operations and sessions use MongoDB. Startup does not fall back to memory. Authentication/ownership APIs are implemented. Account-request/Admin-management/activation APIs are implemented locally and verified against isolated Mongo test databases (78 tests passed). Session-aware User/Admin browser workflows are implemented and real-browser verified. Personal setup and email delivery remain pending. Production readiness requires reviewed provisioning/migration and the protected deployment checks in [FUTURE_INTEGRATION.md](FUTURE_INTEGRATION.md#63-vercel-deployment-readiness-gate).
 
 ## Features
 
@@ -13,7 +13,9 @@ Pocket Ledger is a personal finance tracker for recording income and expenses, r
 - Optional career tracking for probation, checkpoints, skills, tasks, and a learning journal.
 - Philippine-local date handling for financial calculations.
 
-Admin/User implementation is tracked in [ADMIN_USER_PLAN.md](ADMIN_USER_PLAN.md). Business APIs require an active User session; Admin has no finance/Career access. See [AUTHENTICATION_SETUP.md](AUTHENTICATION_SETUP.md) for private test bootstrap and the API login/CSRF handshake. The browser workspace is not yet wired to login or CSRF tokens, so normal browser use awaits Phase 5. There is no default owner, password, public registration, or impersonation header. The [ownership migration runbook](OWNERSHIP_MIGRATION_RUNBOOK.md) covers test rehearsal and the separate live-migration gate.
+Admin/User implementation is tracked in [ADMIN_USER_PLAN.md](ADMIN_USER_PLAN.md). Business APIs require an active User session; Admin has no finance/Career access. See [AUTHENTICATION_SETUP.md](AUTHENTICATION_SETUP.md) for private test bootstrap and the API login/CSRF handshake. The browser now supports login, requests, fragment-based activation, and a separate Admin dashboard with CSRF/session handling; see [BROWSER_WORKFLOWS.md](BROWSER_WORKFLOWS.md). There is no default owner, password, public registration, or impersonation header. The [ownership migration runbook](OWNERSHIP_MIGRATION_RUNBOOK.md) covers test rehearsal and the separate live-migration gate.
+
+[ACCOUNT_MANAGEMENT.md](ACCOUNT_MANAGEMENT.md) documents public account requests, confirmed Admin review/status actions, and single-use activation. Invitation tokens are not returned over HTTP, and email is not connected yet; activation is exercised through private test fixtures rather than a public setup bypass.
 
 ## Requirements
 
@@ -115,7 +117,7 @@ This is an Express/Node application, so GitHub Pages cannot host the running app
 6. Configure secrets through the host's environment-variable settings, never in committed files.
 7. Run `npm run check`, `npm test`, and `npm run validate` before releasing changes.
 
-**Hosting status:** Records and sessions persist in MongoDB. Real provisioning, reviewed live ownership migration, browser workflows, and deployment protections still require completion before exposing real financial data. Vercel/proxy configuration is future work.
+**Hosting status:** Records and sessions persist in MongoDB. Real provisioning, reviewed live ownership migration, email delivery, and deployment protections still require completion before exposing real financial data. Vercel/proxy configuration is future work.
 
 ## Project documents
 

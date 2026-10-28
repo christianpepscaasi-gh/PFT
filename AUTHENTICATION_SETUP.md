@@ -1,6 +1,8 @@
 # Authentication and private test setup
 
-Phase 3 implementation, October 27, 2026. This is API/session infrastructure and a controlled test bootstrap. Browser login/dashboard, account requests, activation invitations, and email delivery are later phases. No real personal identities or live financial records have been provisioned/migrated by this work.
+Phase 3 implementation, October 27, 2026. This is API/session infrastructure and a controlled test bootstrap. Account requests and activation-token APIs were added in Phase 4, and browser workflows in Phase 5; email delivery remains deferred. No real personal identities or live financial records have been provisioned/migrated by this work.
+
+October 28 Phase 4 update: request submission, Admin management, and activation-token APIs are now implemented locally. See [ACCOUNT_MANAGEMENT.md](ACCOUNT_MANAGEMENT.md) for routes, lifecycle/privacy rules, and the completed Mongo verification gate. Browser workflows are now implemented as described in [BROWSER_WORKFLOWS.md](BROWSER_WORKFLOWS.md); email delivery is still deferred, and no raw activation token is returned through HTTP.
 
 ## Runtime configuration
 
@@ -58,7 +60,7 @@ If `pft_test_local` contains legacy ownerless records/global month/date indexes,
 | `POST /api/auth/logout` | Requires the current token, destroys this session, and clears its cookie. |
 | Business API writes | Require an active User session plus its current `x-csrf-token`. Admin has no finance/planning/Career access. |
 
-Authentication endpoints and business responses use `Cache-Control: no-store`. No password, session ID, or authentication token is placed in localStorage. The browser workspace has not yet been wired to this handshake; Phase 5 supplies login/logout/navigation and token handling. Until then use API tests for end-to-end verification, not an unprotected browser shortcut.
+Authentication endpoints and business responses use `Cache-Control: no-store`. No password, session ID, or authentication token is placed in localStorage. The browser workspace now uses this handshake for login/logout, role-specific navigation, and automatic write-token handling. Run `npm run test:browser` for real Edge/Mongo UI verification; no unprotected browser shortcut exists.
 
 ## Session and abuse controls
 
@@ -74,6 +76,6 @@ Authentication endpoints and business responses use `Cache-Control: no-store`. N
 
 `npm run validate` covers memory and real Mongo authentication, password verification, cookie/session rotation, CSRF/origin denial, private business access, Admin denial, disable/re-enable/revocation/logout, shared counters, atomic/idempotent bootstrap, unique emails/sole Admin, and session persistence across closing/reopening the DB and recreating the app. Additional focused tests cover pending identities, absolute expiry, secure-cookie/proxy behavior, malformed setup, test-only CLI safety, scalar identity filters, and refreshing the session store's client after a DB reconnect.
 
-Dependencies added: `express-session` and `connect-mongo`. The body-parser transitive dependency was updated within its compatible range to address the advisory reported during installation. Production deployment and interactive browser verification remain outstanding.
+Dependencies added: `express-session` and `connect-mongo`. The body-parser transitive dependency was updated within its compatible range to address the advisory reported during installation. Real headless Edge workflows passed as documented in [BROWSER_WORKFLOWS.md](BROWSER_WORKFLOWS.md). Production deployment remains outstanding.
 
 Implementation references: [Express session middleware](https://expressjs.com/en/resources/middleware/session/) for session rotation, cookies, and server-side stores; [connect-mongo](https://github.com/jdesboeufs/connect-mongo) for shared Mongo session storage; [Node crypto](https://nodejs.org/api/crypto.html) for scrypt and constant-time comparison.
