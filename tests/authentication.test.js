@@ -34,13 +34,66 @@ test('session authentication enforces login, CSRF, rotation, roles, disable/re-e
 test('HTTPS configuration issues Secure cookies only behind an explicitly trusted proxy', async () => {
   const authentication = createAuthentication({ repository: createMemoryIdentityRepository(), sessionStore: createMemorySessionStore(),
     secret, origin: 'https://pft.example.test', secure: true });
-  const app = createApp({ persistenceStore: createInMemoryPersistenceStore(), authentication });
+  const app = createApp({ persistenceStore: createInMemoryPersistenceStore(), authentication, runtimeEnv: {} });
   const untrusted = await request(app).get('/api/auth/csrf').set('X-Forwarded-Proto', 'https');
   assert.equal(untrusted.headers['set-cookie'], undefined);
-  app.set('trust proxy', 1);
-  const trusted = await request(app).get('/api/auth/csrf').set('X-Forwarded-Proto', 'https');
+  const hosted = createApp({ persistenceStore: createInMemoryPersistenceStore(), authentication,
+    runtimeEnv: { PROXY_MODE: 'vercel', VERCEL: '1', NODE_ENV: 'production' } });
+  const trusted = await request(hosted).get('/api/auth/csrf').set('X-Forwarded-Proto', 'https');
   assert.match(trusted.headers['set-cookie'][0], /; Secure/);
-  assert.equal((await request(app).get('/api/auth/csrf').set('Origin', 'https://attacker.example')).status, 403);
+  assert.match(trusted.headers['set-cookie'][0], /; HttpOnly/);
+  assert.match(trusted.headers['set-cookie'][0], /; SameSite=Strict/);
+  assert.equal((await request(hosted).get('/api/auth/csrf')).headers['set-cookie'], undefined);
+  assert.equal((await request(hosted).get('/api/auth/csrf').set('X-Forwarded-Proto', 'http')).headers['set-cookie'], undefined);
+  assert.equal((await request(hosted).get('/api/auth/csrf').set('X-Forwarded-Proto', 'https').set('Origin', 'https://attacker.example')).status, 403);
+});
+
+test('proxy policy requires explicit platform configuration and trusts only the nearest hop', async () => {
+  const { proxyTrust } = require('../src/config/proxy');
+  assert.equal(proxyTrust({}), false);
+  assert.equal(proxyTrust({ VERCEL: '1', NODE_ENV: 'production' }), false);
+  for (const env of [{ PROXY_MODE: 'true' }, { PROXY_MODE: '1' }, { PROXY_MODE: 'vercel' },
+    { PROXY_MODE: 'vercel', VERCEL: '1', NODE_ENV: 'test' }, { PROXY_MODE: 'vercel', NODE_ENV: 'production' }]) {
+    assert.throws(() => proxyTrust(env), /PROXY_MODE/);
+  }
+  const app = createApp({ persistenceStore: createInMemoryPersistenceStore(),
+    runtimeEnv: { PROXY_MODE: 'vercel', VERCEL: '1', NODE_ENV: 'production' } });
+  // Test-only observation route; no diagnostic endpoint is installed in the product.
+  app.get('/proxy-test', (req, res) => res.json({ ip: req.ip, secure: req.secure }));
+  const result = await request(app).get('/proxy-test').set('X-Forwarded-For', '198.51.100.99, 203.0.113.7').set('X-Forwarded-Proto', 'https');
+  assert.deepEqual(result.body, { ip: '203.0.113.7', secure: true });
+  const direct = createApp({ persistenceStore: createInMemoryPersistenceStore(), runtimeEnv: {} });
+  direct.get('/proxy-test', (req, res) => res.json({ ip: req.ip, secure: req.secure }));
+  const local = await request(direct).get('/proxy-test').set('X-Forwarded-For', '198.51.100.99').set('X-Forwarded-Proto', 'https');
+  assert.notEqual(local.body.ip, '198.51.100.99');
+  assert.equal(local.body.secure, false);
+});
+
+test('proxied HTTPS login rotates a secure cookie and supports authenticated requests and logout', async () => {
+  const repository = createMemoryIdentityRepository();
+  await bootstrapPair(repository, setup(), { apply: true });
+  const origin = 'https://pft.example.test';
+  const authentication = createAuthentication({ repository, sessionStore: createMemorySessionStore(), secret, origin, secure: true });
+  const app = createApp({ persistenceStore: createInMemoryPersistenceStore(), authentication,
+    runtimeEnv: { PROXY_MODE: 'vercel', VERCEL: '1', NODE_ENV: 'production' } });
+  const send = (method, route, cookie) => {
+    const call = request(app)[method](route).set('X-Forwarded-Proto', 'https').set('Origin', origin);
+    return cookie ? call.set('Cookie', cookie) : call;
+  };
+  const initial = await send('get', '/api/auth/csrf');
+  const initialCookie = initial.headers['set-cookie'][0].split(';')[0];
+  const loggedIn = await send('post', '/api/auth/login', initialCookie).set('x-csrf-token', initial.body.csrfToken)
+    .send({ email: setup().user.email, password: setup().user.password });
+  assert.equal(loggedIn.status, 200);
+  assert.match(loggedIn.headers['set-cookie'][0], /; Secure/);
+  const cookie = loggedIn.headers['set-cookie'][0].split(';')[0];
+  assert.notEqual(cookie, initialCookie);
+  assert.equal((await send('get', '/api/auth/me', cookie)).body.user.role, 'user');
+  assert.equal((await send('post', '/api/auth/logout', cookie).set('x-csrf-token', initial.body.csrfToken)).status, 403);
+  const logout = await send('post', '/api/auth/logout', cookie).set('x-csrf-token', loggedIn.body.csrfToken);
+  assert.equal(logout.status, 200);
+  assert.match(logout.headers['set-cookie'][0], /; Secure/);
+  assert.equal((await send('get', '/api/auth/me', cookie)).status, 401);
 });
 
 test('passwords use independent salts and reject invalid or malformed credentials', async () => {

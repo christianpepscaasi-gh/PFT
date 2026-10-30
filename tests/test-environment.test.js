@@ -37,8 +37,11 @@ test('URI aliases and unnamed dedicated test connections are supported', () => {
 });
 
 test('unit-only configuration disables every Mongo URI; localhost mode uses a stable test database', () => {
-  const source = { MONGODB_URI: 'mongodb://localhost/live', MONGODB_URI_TEST: 'mongodb://localhost/test' };
+  const source = { MONGODB_URI: 'mongodb://localhost/live', MONGODB_URI_TEST: 'mongodb://localhost/test', PROXY_MODE: 'vercel', VERCEL: '1' };
   const unit = createTestEnvironment(source, { unit: true });
+  assert.equal(unit.PROXY_MODE, 'direct');
+  assert.equal(createTestEnvironment(source, { server: true }).PROXY_MODE, 'direct');
+  assert.equal(source.PROXY_MODE, 'vercel');
   for (const key of ['MONGODB_URI', 'MONGODB_URI_TEST', 'MONGODB_TEST_URI', 'MONGO_URI_TEST']) assert.equal(unit[key], '');
   assert.equal(new URL(createTestEnvironment(source, { server: true }).MONGODB_URI).pathname, '/pft_test_local');
 });
@@ -50,5 +53,16 @@ test('test and localhost entrypoints refuse missing test configuration despite a
     assert.equal(result.error, undefined);
     assert.equal(result.status, 1);
     assert.doesNotMatch(result.stdout + result.stderr, /mongodb:\/\/localhost\/live|Server listening/);
+  }
+});
+
+test('retained seed refuses missing apply, live targets, and unsupported flags before database access', () => {
+  const script = path.join(__dirname, '..', 'scripts', 'seed-test.js');
+  for (const args of [[], ['--target', 'test'], ['--target', 'live', '--apply'], ['--target', 'test', '--apply', '--reset']]) {
+    const result = spawnSync(process.execPath, [script, ...args], { encoding: 'utf8', timeout: 10000 });
+    assert.equal(result.error, undefined);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /Test seed stopped/);
+    assert.doesNotMatch(result.stdout + result.stderr, /mongodb:\/\/|mongodb\+srv:\/\/|Seed retained/);
   }
 });

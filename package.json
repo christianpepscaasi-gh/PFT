@@ -10,7 +10,9 @@
     "test:unit": "node scripts/run-tests.js --unit",
     "test:browser": "node scripts/run-browser-tests.js",
     "dev:test": "node scripts/test-server.js",
+    "seed:test": "node scripts/seed-test.js",
     "bootstrap:test": "node scripts/bootstrap-test.js",
+    "bootstrap:production": "node scripts/bootstrap-production.js",
     "validate": "npm run check && npm test"
   },
   "engines": {

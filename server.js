@@ -2,6 +2,7 @@ const express = require('express');
 const path = require('node:path');
 const dotenv = require('dotenv');
 const { createMongoAuthentication } = require('./src/auth/authentication');
+const { proxyTrust } = require('./src/config/proxy');
 const { ACCOUNT_TYPES } = require('./src/utils/accounts');
 const { createPersistenceStore, mongoose } = require('./src/persistence');
 const { getAccountBalance, getPhilippineDateKey, getWeekWindow, parsePhilippineDate } = require('./src/utils/finance');
@@ -231,9 +232,10 @@ function serializeProbation(record) {
   };
 }
 
-function createApp({ persistenceStore, resolveIdentity, authentication } = {}) {
-  const store = persistenceStore || createPersistenceStore({ mongoUri: process.env.MONGODB_URI });
+function createApp({ persistenceStore, resolveIdentity, authentication, runtimeEnv = process.env } = {}) {
+  const store = persistenceStore || createPersistenceStore({ mongoUri: runtimeEnv.MONGODB_URI });
   const app = express();
+  app.set('trust proxy', proxyTrust(runtimeEnv));
   app.locals.persistenceStore = store;
 
   app.use(express.json({ limit: '1mb' }));
@@ -264,8 +266,8 @@ function createApp({ persistenceStore, resolveIdentity, authentication } = {}) {
     return res.json({ ok: true, ready: true, database: store.mode });
   }));
 
-  const auth = authentication || (!resolveIdentity && store.mode === 'mongo' && process.env.SESSION_SECRET
-    ? createMongoAuthentication(store) : null);
+  const auth = authentication || (!resolveIdentity && store.mode === 'mongo' && runtimeEnv.SESSION_SECRET
+    ? createMongoAuthentication(store, runtimeEnv) : null);
   if (auth) auth.install(app);
   else app.use('/api/auth', (req, res) => res.status(503).json({ error: 'Authentication is not configured.' }));
 

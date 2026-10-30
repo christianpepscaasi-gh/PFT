@@ -3,7 +3,7 @@ const { randomUUID } = require('node:crypto');
 const URI_KEYS = ['MONGODB_URI', 'MONGODB_URI_TEST', 'MONGODB_TEST_URI', 'MONGO_URI_TEST'];
 
 function createTestEnvironment(source, { unit = false, server = false } = {}) {
-  const env = { ...source, NODE_ENV: 'test' };
+  const env = { ...source, NODE_ENV: 'test', PROXY_MODE: 'direct' };
   if (!server) {
     env.SESSION_SECRET = 'synthetic-isolated-test-session-secret-not-for-real-use';
     env.APP_ORIGIN = 'http://127.0.0.1:3000';

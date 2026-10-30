@@ -25,7 +25,7 @@ async function main() {
     await store.close();
     throw error;
   }
-  console.log(`Test server: http://127.0.0.1:${port}; database pft_test_local. Session authentication enabled; use the auth API until browser login is built. Test data is retained after shutdown.`);
+  console.log(`Test server: http://127.0.0.1:${port}; database pft_test_local. Sign in through the browser. Test data is retained after shutdown.`);
   let closing = false;
   async function shutdown() {
     if (closing) return;
