@@ -10,7 +10,7 @@
 
 October 30 update: after explicit proxy/session configuration, `npm.cmd run validate` passed **80 tests with zero failures/skips**, including all dedicated Mongo checks. The earlier test-cluster connection issue was resolved after the development IP allowlist update. Hosted checks remain pending; the Edge result above is from October 28.
 
-Latest October 30 validation after test-seed and production-bootstrap tooling: **85 tests passed, zero failures/skips**; the separate Edge journey was also rerun successfully on October 30. Production bootstrap is implemented, but its configuration dry run currently refuses identical Admin/User emails, so no real identities have been provisioned. User has authorized provisioning once configuration validates. This does not authorize deployment or ownership migration.
+Latest October 30 validation after test-seed and production-bootstrap tooling: **85 tests passed, zero failures/skips**; the separate Edge journey was also rerun successfully on October 30. Production bootstrap subsequently passed and, with explicit user authorization, provisioned the sole Admin and separate personal User in the new `pocket_ledger` database. Read-back checks verified both active roles, password hashes, marker, and audit. No business records, ownership migration, email, or deployment were performed. Preview must use its separate synthetic database.
 
 ## Recommended order
 
@@ -18,7 +18,7 @@ Latest October 30 validation after test-seed and production-bootstrap tooling: *
 2. Configure a protected Preview with its own database, limited database credentials, Atlas access from the deployment, and synthetic Admin/User identities. Keep Preview credentials/data separate from Production. Verify protection covers API routes as well as pages. Do not upload `.env` or use the live database for Preview testing.
 3. Test hosted routing/static assets, login/logout/CSRF, both roles, ownership isolation, disable/session revocation, Mongo connection reuse and failures, cold/warm invocations, and persistence across redeploy. Verify production dependency/runtime compatibility, including password hashing memory/latency. Record the URL and evidence before any promotion.
 4. Complete the final email feature before inviting clients: choose provider, sender/domain, cost limits and credentials; implement delivery; test activation/reissue/expiry with an authorized recipient. Email is not required for a synthetic Preview, but the current UI cannot deliver an invitation to a real recipient.
-5. Prepare real owner setup: separate Admin and personal User identities. If keeping existing records, review durable backup, explicit ownership migration, legacy indexes, validation, and rollback with writes stopped. This has not been performed against live data.
+5. Real owner identities were provisioned and verified October 30 in `pocket_ledger`. Keep them separate from test/Preview identities. If importing existing business records later, review durable backup, explicit ownership migration, legacy indexes, validation, and rollback with writes stopped; that migration has not been performed.
 6. Review the completed release evidence and explicitly authorize Production deployment. Keep live provisioning/migration and deployment as concrete separately reviewed actions.
 
 ## Hosting references

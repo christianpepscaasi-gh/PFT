@@ -2,7 +2,7 @@
 
 Pocket Ledger is a personal finance tracker for recording income and expenses, reviewing account balances, and keeping budgets and spending plans separate from actual money. It also includes an optional career-progress area for probation dates, checkpoints, skills, tasks, and learning notes.
 
-> **Development status:** Normal application operations and sessions use MongoDB. Startup does not fall back to memory. Authentication/ownership APIs are implemented. Account-request/Admin-management/activation APIs are implemented locally and verified against isolated Mongo test databases (78 tests passed). Session-aware User/Admin browser workflows are implemented and real-browser verified. Personal setup and email delivery remain pending. Production readiness requires reviewed provisioning/migration and the protected deployment checks in [FUTURE_INTEGRATION.md](FUTURE_INTEGRATION.md#63-vercel-deployment-readiness-gate).
+> **Development status:** Normal application operations and sessions use MongoDB. Startup does not fall back to memory. Authentication, ownership, account management, activation, and User/Admin browser workflows are implemented; latest full validation passed 85 tests, and real Edge verification passed. Production Admin and separate personal User were provisioned and verified October 30 in `pocket_ledger`. Email delivery and hosted verification remain pending. Production readiness still requires the protected deployment checks in [VERCEL_READINESS.md](VERCEL_READINESS.md) and separate review before any legacy-data migration.
 
 ## Features
 
@@ -124,4 +124,4 @@ This is an Express/Node application, so GitHub Pages cannot host the running app
 ## Project documents
 
 - [PRD_v2.md](PRD_v2.md) is the product requirements source of truth.
-- [FUTURE_INTEGRATION.md](FUTURE_INTEGRATION.md) describes the planned MongoDB persistence work and later authentication/RBAC architecture. Its current implementation scope is MongoDB persistence only; login and RBAC remain future work.
+- [FUTURE_INTEGRATION.md](FUTURE_INTEGRATION.md) records persistence/authentication history and the remaining production release gates; current hosting status is summarized in [VERCEL_READINESS.md](VERCEL_READINESS.md).

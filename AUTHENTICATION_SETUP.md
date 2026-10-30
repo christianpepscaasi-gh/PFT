@@ -19,6 +19,8 @@ Normal `node server.js` / `npm run dev` still select `MONGODB_URI`, which is liv
 
 ## Controlled production bootstrap
 
+October 30 execution: user-authorized bootstrap created the sole active Admin and separate active personal User in new production database `pocket_ledger`. Read-back verification passed for password hashes, roles, bootstrap marker, and setup audit. Private `.env` now explicitly names that database. No business records or migration/deployment were performed. Previous blocked credential/target dry runs are historical.
+
 The offline production command reads credentials from the gitignored `.env.account`; the running app never reads that file or uses it to decide who is Admin. Copy the field names from `.env.account.example`, then fill `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `USER_EMAIL`, and `USER_PASSWORD` privately. Admin and personal User emails must differ; passwords must contain 12–128 characters. Optional `ADMIN_NAME`/`USER_NAME` override display names. Quote dotenv values containing `#` or whitespace. Do not paste credentials into chat or command arguments.
 
 Run `npm run bootstrap:production -- --target production` first. This validates credentials and the explicitly named production database from server-side `MONGODB_URI` (process environment takes precedence over `.env`) **without connecting to MongoDB or writing anything**. It prints only the database name and proposed scope, not emails/passwords/URI. It rejects unnamed/test/system databases and database-name query overrides. This is configuration validation, not verification that the database exists or is ready.

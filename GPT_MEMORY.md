@@ -2,6 +2,15 @@
 
 Last updated: **October 30, 2026, Asia/Manila**.
 
+## October 30: Production Admin and personal User provisioned
+
+- User corrected credential fields and confirmed the live cluster has no app database yet (Atlas project PFT, cluster data). Prior explicit authorization to seed production and commit remains in effect.
+- Selected `pocket_ledger` as the new application database. Updated only the unnamed `MONGODB_URI` database path in private `.env`; credentials and all other settings were preserved and not printed. `.env`, `.env.account`, and private test seed setup remain ignored/untracked.
+- Production dry run passed for `pocket_ledger`; ran `npm run bootstrap:production -- --target production --database pocket_ledger --apply` successfully. This is actual production identity provisioning, superseding earlier blocked status below. Created sole active Admin and separate active personal User, hashed passwords, bootstrap marker, setup audit, and auth indexes. No business-data seeding, ownership migration, email, or deployment.
+- Read-back verification passed: exactly two active identities, exactly one Admin, each stored hash verifies against the private supplied password, both IDs match bootstrap marker, exactly one owner-bootstrap audit event. No credentials/emails/hashes were printed or committed.
+- Code and earlier docs already committed as `8046416` and `e46afd8`; the provisioning evidence is recorded in a follow-up documentation commit. No push requested/performed. Latest full suite: 85/85; Edge journey passed earlier this session.
+- Next: protected synthetic-data Vercel Preview preparation and hosted verification. When configuring eventual Production, explicitly select `pocket_ledger` with stable private session secret and exact HTTPS origin; never point Preview at it. Private account-file credentials are only offline provisioning inputs, not runtime settings. Do not start normal local app against production to test.
+
 ## October 30: Production seed authorized; distinct emails still needed
 
 - User explicitly requested: seed the main production database and commit our changes. This authorizes the paired Admin/personal User bootstrap once credentials/target validate; no deployment or GitHub push was requested. User confirmed both identities and Admin visibility of accounts/statuses only.
