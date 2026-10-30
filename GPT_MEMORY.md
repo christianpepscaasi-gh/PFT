@@ -1,6 +1,46 @@
 # PFT working memory
 
-Last updated: **October 28, 2026, Asia/Manila**.
+Last updated: **October 30, 2026, Asia/Manila**.
+
+## October 30: Production seed authorized; distinct emails still needed
+
+- User explicitly requested: seed the main production database and commit our changes. This authorizes the paired Admin/personal User bootstrap once credentials/target validate; no deployment or GitHub push was requested. User confirmed both identities and Admin visibility of accounts/statuses only.
+- After user saved corrected passwords, the latest dry run passed password checks but refused identical normalized Admin/User email addresses. Asked user to save distinct emails and retry, or seed later. No database connection or production writes occurred; no credential values were printed. Never weaken validation or change chosen credentials automatically.
+- Final full dedicated-Mongo validation: **85 passed, zero failures/skips**, including proxy/session, bootstrap safeguards, retained-seed CLI guards, and all native Mongo checks. Prior real Edge and retained test-seed rerun passed. All private credential files are ignored and untracked. Authorized code/documentation commits proceed while production provisioning remains pending.
+- Implementation committed locally as `8046416`; documentation handoff is a separate commit. No GitHub push requested or performed.
+- Next when user updates credentials: rerun production dry run, inspect its named database/scope, use the exact `--database NAME --apply` target for the already-authorized bootstrap, verify only identity/bootstrap/audit results, and leave business ownership migration/deployment untouched. Do not mistake a failed dry run for production seeding.
+
+## October 30: Production identity bootstrap prepared, not applied
+
+- User requested seeding the main database using `.env.account` fields `ADMIN_EMAIL` and `ADMIN_PASSWORD`. Added explicit `.env.account` Git ignore protection before accessing configuration; file was untracked, not committed. Added safe `.env.account.example` with Admin and separate personal User fields and optional display names. Actual credential file was not edited or printed.
+- Asked user to confirm adding `USER_EMAIL` and `USER_PASSWORD` for the previously agreed separate personal User identity. Production command requires both identities; do not silently change the sole-Admin/private-User design while awaiting this answer.
+- Added `bootstrap:production` script and pure validation helpers. Default `--target production` is a no-connection/no-write dry run; apply requires `--target production --database NAME --apply` with exact match to the named non-test/non-system Mongo target. Reads only private account-file values and server-side main connection configuration; never imports the web server. Uses existing atomic bootstrap, auth indexes, hashed passwords, single Admin, and setup audit; no resets, business data, ownership migration, or email.
+- Ran actual dry run: **stopped safely before Mongo connection**, reporting empty/missing `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `USER_EMAIL`, `USER_PASSWORD` by field names only. No live database read/write occurred. Next: user fills private credentials/answers paired-identity question; rerun configuration dry run and review the exact database/scope before live apply. No current production provisioning has happened.
+- Lint plus four focused tests passed: secret-free validation, explicit target/CLI safety, hashed identities, dry-run/no-write behavior, preserved passwords/roles on rerun, and conflicting identity refusal. Existing native Mongo bootstrap contract was verified in the earlier 80/80 full run; these four new tests were run separately. Documented command and release boundaries in authentication setup. No commit/push/deployment.
+
+## October 30: Retained test seed and role verification
+
+- User authorized creating test-database seed data and checking User actions/Admin visibility. Asked whether Admin visibility means accounts/statuses; preserved the previously agreed privacy policy while checking independent work. No expanded Admin finance/Career access was implemented.
+- Added `npm run seed:test -- --target test --apply` (`scripts/seed-test.js`). Uses dedicated safe test wrapper and retains records only in `pft_test_local`; refuses unsupported/live/reset CLI targets, conflicting existing identities, and password resets. Generates random Admin/User credentials in gitignored `test-seed.bootstrap.local.json`; never prints passwords, secrets, or connection strings.
+- Initial apply passed: Demo Admin/User, User-owned PHP 5,000 Cash wallet, PHP 150 expense, and private Career journal retained. Real authenticated API checks passed for User create/read/edit/delete, Admin visibility of active User, Admin finance/Career 403, and User Admin-route 403. Temporary CRUD verification record deleted; both check sessions logged out.
+- Repeated apply also passed, reusing the saved credentials and existing named sample records without resets.
+- Latest real Edge journey passed against its separate disposable Mongo database; cleanup passed. Lint and six configuration/seed CLI safety checks passed. Prior full suite this session: 80/80; newly added CLI test was verified separately.
+- Usage documented in `TEST_SEED.md` and README. `dev:test` startup message now points to browser sign-in. No real `.env` edits, live data access, email, deployment, commit, or push. Use local private file for manual logins; never expose those credentials in chat or source.
+
+## October 30: Atlas access restored; full proxy validation passed
+
+- User added the development IP and requested a retry. `npm.cmd run validate` now **PASS: 80 tests, zero failures/skips**, including the new proxy/HTTPS session tests and all native Mongo auth, management, isolation/migration, and restart checks. Temporary test databases cleaned up successfully.
+- Earlier October 30 Atlas connection failure below is historical; it is no longer the current blocker. Only the dedicated test connection was used. No live access, deployment, commit, or push.
+- Next: prepare the protected synthetic-data Vercel Preview configuration and obtain concrete deployment authorization before publishing; hosted HTTPS/proxy/runtime/persistence evidence is still pending.
+
+## October 30: Explicit Vercel proxy/session configuration
+
+- User authorized implementing the production session/proxy preparation. Added `src/config/proxy.js`: `PROXY_MODE=direct` by default; explicit `vercel` mode requires platform `VERCEL=1` and Node production mode and trusts only the immediate proxy hop. Unknown/unsupported modes fail startup. Policy is selected from server configuration, never request headers.
+- `createApp` accepts an injected runtime environment and uses it consistently for proxy policy, default database selection, and Mongo authentication. Test wrappers force direct mode, including local test-server runs.
+- Expanded HTTPS tests: default mode ignores spoofed forwarded protocol/IP; configured mode issues Secure/HttpOnly/SameSite cookies, respects nearest-hop IP, retains origin/CSRF denial, rotates the session on login, supports authenticated requests, and invalidates it on logout. Added inherited proxy-mode isolation assertions.
+- Verification: lint and whitespace checks passed. Unit-only suite: **75 passed, zero failed, 5 explicit Mongo skips (80 total)**. Full validation was attempted, but dedicated Atlas cluster connection/server selection failed; new proxy/session tests passed within that run. Asked user to check cluster status/current development IP allowlist. Do not claim current full Mongo validation passed or weaken TLS/network controls. Prior October 28 all-green results remain historical.
+- Removed our ignored temporary `artifacts/browser/table-preview.cjs` leftover, which lint picked up; screenshots remain. Updated `.env.example`, authentication setup, Vercel checklist/current gate; actual `.env` unchanged. Consulted official Vercel request-header and Express proxy documentation.
+- Hosting assumption: direct Vercel ingress with platform-managed headers; additional upstream/custom Enterprise proxies require review. Local simulation is not actual hosted verification. Next: restore test-cluster access, rerun full validation, then prepare the protected synthetic-data Preview and verify HTTPS cookies, client IP throttles, runtime/connection behavior, and redeploy persistence. No deploy, live provisioning/migration, commit or push authorized this turn.
 
 ## October 28: End-of-session handoff
 

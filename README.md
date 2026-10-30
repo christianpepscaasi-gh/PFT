@@ -43,6 +43,8 @@ This command requires `MONGODB_URI_TEST` (aliases: `MONGODB_TEST_URI`, `MONGO_UR
 
 Browser test data is kept in the fixed `pft_test_local` database on the test connection, including after shutdown. Automated restart/ownership/migration/authentication tests use separate randomly named databases and clean those up. The shell/health/readiness work, and business requests require login. The server command does not modify `.env`, migrate records, seed identities, or delete browser test data. Explicit private provisioning uses `npm run bootstrap:test -- --target test [--apply]` with stdin, as documented in the setup guide.
 
+For retained synthetic demo accounts and sample records, run `npm run seed:test -- --target test --apply`; see [TEST_SEED.md](TEST_SEED.md). Random passwords stay in the gitignored local setup file. The seed verifies User CRUD and Admin account visibility while preserving financial/Career privacy.
+
 To run without Nodemon:
 
 ```bash
